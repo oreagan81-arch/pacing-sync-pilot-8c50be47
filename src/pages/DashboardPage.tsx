@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Activity, Globe, ClipboardList, Megaphone, AlertTriangle,
-  CheckCircle2, Clock, TrendingUp, BookOpen, FileText,
+  CheckCircle2, Clock, TrendingUp, BookOpen, FileText, Calendar,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
