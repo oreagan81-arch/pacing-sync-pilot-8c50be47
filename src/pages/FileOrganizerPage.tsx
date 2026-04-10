@@ -61,6 +61,19 @@ function generateFriendlyName(subject: string, type: string, lessonNum: string):
   return `${prefix}${suffix}${lessonNum.padStart(3, '0')}.pdf`;
 }
 
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Strip data URL prefix to get raw base64
+      resolve(result.split(',')[1]);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function FileOrganizerPage() {
   const [files, setFiles] = useState<FileRecord[]>([]);
   const [loading, setLoading] = useState(false);
