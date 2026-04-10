@@ -10,8 +10,9 @@ Deno.serve(async (req) => {
   }
 
   const urls = [
-    "https://ai-gateway.lovable.app/v1/chat/completions",
-    "https://ai-gateway.lovable.app/chat/completions",
+    "https://gateway.lovable.dev/v1/chat/completions",
+    "https://gateway.lovable.dev/chat/completions",
+    "https://gateway.lovable.dev/api/v1/chat/completions",
   ];
   
   const results: Record<string, string> = {};
@@ -31,7 +32,7 @@ Deno.serve(async (req) => {
         signal: AbortSignal.timeout(10000),
       });
       const body = await resp.text();
-      results[url] = `status: ${resp.status}, body: ${body.slice(0, 200)}`;
+      results[url] = `status: ${resp.status}, body: ${body.slice(0, 300)}`;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       results[url] = msg.length > 100 ? msg.slice(0, 100) : msg;
