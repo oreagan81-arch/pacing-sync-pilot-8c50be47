@@ -6,6 +6,33 @@ const corsHeaders = {
 
 const AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 
+const classifyTool = {
+  type: "function" as const,
+  function: {
+    name: "classify_file",
+    description: "Classify an educational file by subject, type, and lesson number.",
+    parameters: {
+      type: "object",
+      properties: {
+        subject: {
+          type: "string",
+          enum: ["Math", "Reading", "Spelling", "Language Arts", "History", "Science"],
+        },
+        type: {
+          type: "string",
+          enum: ["worksheet", "test", "study_guide", "answer_key", "resource"],
+        },
+        lesson_num: {
+          type: "string",
+          description: "Numeric lesson/test number extracted from the filename (digits only)",
+        },
+      },
+      required: ["subject", "type", "lesson_num"],
+      additionalProperties: false,
+    },
+  },
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -32,19 +59,13 @@ Deno.serve(async (req) => {
 
 Filename: "${filename}"
 
-Subjects: Math, Reading, Spelling, Language Arts, History, Science
-Types: worksheet, test, study_guide, answer_key, resource
-
 Common naming patterns:
 - SM5 = Saxon Math 5th grade
 - RM4 = Reading Mastery 4th grade  
 - ELA4 = English Language Arts 4th grade
 - L = Lesson, T = Test, SG = Study Guide
 
-Return ONLY valid JSON:
-{"subject": "...", "type": "...", "lesson_num": "..."}
-
-Where lesson_num is the numeric lesson/test number extracted from the filename (just digits, no prefix).`;
+Use the classify_file tool to return your answer.`;
 
     const response = await fetch(AI_URL, {
       method: "POST",
@@ -56,26 +77,46 @@ Where lesson_num is the numeric lesson/test number extracted from the filename (
         model: "google/gemini-2.5-flash-lite",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.1,
+        tools: [classifyTool],
+        tool_choice: { type: "function", function: { name: "classify_file" } },
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
+      if (response.status === 429) {
+        return new Response(JSON.stringify({ error: "Rate limited, please try again later." }), {
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (response.status === 402) {
+        return new Response(JSON.stringify({ error: "AI credits exhausted. Add funds in Settings > Workspace > Usage." }), {
+          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       return new Response(JSON.stringify({ error: `AI request failed: ${errText}` }), {
-        status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const aiResult = await response.json();
-    const content = aiResult.choices?.[0]?.message?.content || "";
+    const toolCall = aiResult.choices?.[0]?.message?.tool_calls?.[0];
 
     let parsed;
-    try {
-      const jsonStr = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      parsed = JSON.parse(jsonStr);
-    } catch {
-      parsed = { subject: "Unknown", type: "resource", lesson_num: "" };
+    if (toolCall?.function?.arguments) {
+      try {
+        parsed = JSON.parse(toolCall.function.arguments);
+      } catch {
+        parsed = { subject: "Unknown", type: "resource", lesson_num: "" };
+      }
+    } else {
+      // Fallback to content parsing
+      const content = aiResult.choices?.[0]?.message?.content || "";
+      try {
+        parsed = JSON.parse(content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim());
+      } catch {
+        parsed = { subject: "Unknown", type: "resource", lesson_num: "" };
+      }
     }
 
     return new Response(JSON.stringify(parsed), {
