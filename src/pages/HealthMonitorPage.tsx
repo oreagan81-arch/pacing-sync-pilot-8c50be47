@@ -1,82 +1,189 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, CheckCircle2, AlertTriangle, XCircle, Wifi } from "lucide-react";
+import { useEffect, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Activity, CheckCircle2, AlertTriangle, XCircle, RefreshCw, Clock } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
-const healthChecks = [
-  { name: "Canvas API", status: "online", latency: "120ms" },
-  { name: "Supabase DB", status: "online", latency: "45ms" },
-  { name: "Gemini Vision", status: "online", latency: "890ms" },
-  { name: "PDF Processor", status: "degraded", latency: "2100ms" },
-  { name: "Calendar Sync", status: "online", latency: "200ms" },
-];
+interface DeployLogEntry {
+  id: string;
+  action: string | null;
+  subject: string | null;
+  status: string | null;
+  message: string | null;
+  canvas_url: string | null;
+  created_at: string | null;
+  week_id: string | null;
+}
 
-const statusIcon = (status: string) => {
-  switch (status) {
-    case "online":
-      return <CheckCircle2 className="h-4 w-4 text-success" />;
-    case "degraded":
-      return <AlertTriangle className="h-4 w-4 text-warning" />;
-    default:
-      return <XCircle className="h-4 w-4 text-destructive" />;
-  }
-};
+interface Stats {
+  total: number;
+  deployed: number;
+  errors: number;
+  noChange: number;
+}
 
 export default function HealthMonitorPage() {
+  const [logs, setLogs] = useState<DeployLogEntry[]>([]);
+  const [stats, setStats] = useState<Stats>({ total: 0, deployed: 0, errors: 0, noChange: 0 });
+  const [filter, setFilter] = useState<string>('all');
+  const [loading, setLoading] = useState(false);
+
+  const loadLogs = async () => {
+    setLoading(true);
+    let query = supabase.from('deploy_log').select('*').order('created_at', { ascending: false }).limit(100);
+    if (filter !== 'all') query = query.eq('action', filter);
+    const { data } = await query;
+    if (data) {
+      setLogs(data);
+      setStats({
+        total: data.length,
+        deployed: data.filter(l => l.status === 'DEPLOYED').length,
+        errors: data.filter(l => l.status === 'ERROR').length,
+        noChange: data.filter(l => l.status === 'NO_CHANGE').length,
+      });
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { loadLogs(); }, [filter]);
+
+  // Realtime subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel('deploy-log-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'deploy_log' }, (payload) => {
+        setLogs(prev => [payload.new as DeployLogEntry, ...prev].slice(0, 100));
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  const statusIcon = (status: string | null) => {
+    if (status === 'DEPLOYED') return <CheckCircle2 className="h-4 w-4 text-success" />;
+    if (status === 'ERROR') return <XCircle className="h-4 w-4 text-destructive" />;
+    if (status === 'NO_CHANGE') return <AlertTriangle className="h-4 w-4 text-warning" />;
+    return <Clock className="h-4 w-4 text-muted-foreground" />;
+  };
+
+  const statusBadge = (status: string | null) => {
+    if (status === 'DEPLOYED') return <Badge className="text-[10px] bg-success text-success-foreground">DEPLOYED</Badge>;
+    if (status === 'ERROR') return <Badge variant="destructive" className="text-[10px]">ERROR</Badge>;
+    if (status === 'NO_CHANGE') return <Badge variant="secondary" className="text-[10px]">NO CHANGE</Badge>;
+    return <Badge variant="outline" className="text-[10px]">{status}</Badge>;
+  };
+
+  const formatTime = (ts: string | null) => {
+    if (!ts) return '—';
+    const d = new Date(ts);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  };
+
+  const formatDate = (ts: string | null) => {
+    if (!ts) return '';
+    return new Date(ts).toLocaleDateString();
+  };
+
   return (
     <div className="space-y-6 animate-slide-in">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">AI Health Monitor</h1>
-        <p className="text-muted-foreground mt-1">
-          Real-time system status &amp; diagnostics
-        </p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Health Monitor</h1>
+          <p className="text-muted-foreground mt-1">Real-time deployment logs &amp; system diagnostics</p>
+        </div>
+        <div className="flex gap-2">
+          <Select value={filter} onValueChange={setFilter}>
+            <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Actions</SelectItem>
+              <SelectItem value="page_deploy">Page Deploys</SelectItem>
+              <SelectItem value="assignment_deploy">Assignments</SelectItem>
+              <SelectItem value="announcement_post">Announcements</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="sm" onClick={loadLogs} className="gap-1.5">
+            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          </Button>
+        </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {healthChecks.map((check) => (
-          <Card key={check.name} className="glass">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center justify-between">
-                <span className="flex items-center gap-2">
-                  <Wifi className="h-3.5 w-3.5 text-muted-foreground" />
-                  {check.name}
-                </span>
-                {statusIcon(check.status)}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between">
-                <span className="text-xs capitalize text-muted-foreground">
-                  {check.status}
-                </span>
-                <span className="text-xs font-mono text-muted-foreground">
-                  {check.latency}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      {/* Stats cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-6 text-center">
+            <p className="text-3xl font-extrabold">{stats.total}</p>
+            <p className="text-xs text-muted-foreground uppercase mt-1">Total</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6 text-center">
+            <p className="text-3xl font-extrabold text-success">{stats.deployed}</p>
+            <p className="text-xs text-muted-foreground uppercase mt-1">Deployed</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6 text-center">
+            <p className="text-3xl font-extrabold text-destructive">{stats.errors}</p>
+            <p className="text-xs text-muted-foreground uppercase mt-1">Errors</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6 text-center">
+            <p className="text-3xl font-extrabold text-warning">{stats.noChange}</p>
+            <p className="text-xs text-muted-foreground uppercase mt-1">No Change</p>
+          </CardContent>
+        </Card>
       </div>
 
-      <Card className="glass">
+      {/* Deploy log */}
+      <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <Activity className="h-4 w-4" />
             Deployment Log
+            <Badge variant="outline" className="text-[10px] ml-2">Live</Badge>
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-2 font-mono text-xs">
-            {[
-              { time: "10:42:15", msg: "Canvas PUT /courses/21957/pages/week-18-agenda — 200 OK" },
-              { time: "10:42:14", msg: "Front page check GET — front_page: false — safe to update" },
-              { time: "10:42:12", msg: "Assignment created: Math Lesson 78 Odds — ID canvas_78001" },
-              { time: "10:42:10", msg: "Risk assessment: score 25 (medium) — proceeding" },
-              { time: "10:42:08", msg: "Deployment initiated for Week 18 — 5 items queued" },
-            ].map((log, i) => (
-              <div key={i} className="flex gap-3 text-muted-foreground">
-                <span className="text-primary shrink-0">{log.time}</span>
-                <span>{log.msg}</span>
-              </div>
-            ))}
+        <CardContent className="p-0">
+          <div className="overflow-auto max-h-[500px]">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-muted">
+                <tr>
+                  <th className="p-3 text-left text-xs font-semibold">Time</th>
+                  <th className="p-3 text-left text-xs font-semibold">Action</th>
+                  <th className="p-3 text-left text-xs font-semibold">Subject</th>
+                  <th className="p-3 text-left text-xs font-semibold">Status</th>
+                  <th className="p-3 text-left text-xs font-semibold">Message</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">Loading...</td></tr>
+                ) : logs.length === 0 ? (
+                  <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">No deployment logs yet.</td></tr>
+                ) : logs.map(log => (
+                  <tr key={log.id} className="border-t hover:bg-muted/50">
+                    <td className="p-3 font-mono text-xs whitespace-nowrap">
+                      <div>{formatTime(log.created_at)}</div>
+                      <div className="text-muted-foreground text-[10px]">{formatDate(log.created_at)}</div>
+                    </td>
+                    <td className="p-3">
+                      <Badge variant="outline" className="text-[10px]">{log.action}</Badge>
+                    </td>
+                    <td className="p-3 text-xs font-medium">{log.subject || '—'}</td>
+                    <td className="p-3">{statusBadge(log.status)}</td>
+                    <td className="p-3 text-xs text-muted-foreground max-w-[300px] truncate">
+                      {log.canvas_url ? (
+                        <a href={log.canvas_url} target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                          {log.message}
+                        </a>
+                      ) : log.message}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </CardContent>
       </Card>
