@@ -22,7 +22,8 @@ Deno.serve(async (req) => {
     }
 
     const canvasToken = Deno.env.get("CANVAS_API_TOKEN");
-    const canvasBase = Deno.env.get("CANVAS_BASE_URL") || "https://thalesacademy.instructure.com";
+    let canvasBase = Deno.env.get("CANVAS_BASE_URL") || "https://thalesacademy.instructure.com";
+    if (!canvasBase.startsWith("http")) canvasBase = `https://${canvasBase}`;
     if (!canvasToken) {
       return new Response(JSON.stringify({ error: "CANVAS_API_TOKEN not configured" }), {
         status: 500,
