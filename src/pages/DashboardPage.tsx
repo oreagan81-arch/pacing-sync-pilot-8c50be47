@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Activity, Globe, ClipboardList, Megaphone, AlertTriangle,
-  CheckCircle2, Clock, TrendingUp, BookOpen, FileText,
+  CheckCircle2, Clock, TrendingUp, BookOpen, FileText, Calendar,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
@@ -32,6 +32,27 @@ interface RecentDeploy {
   created_at: string | null;
 }
 
+interface PacingRow {
+  subject: string;
+  day: string;
+  type: string | null;
+  lesson_num: string | null;
+  in_class: string | null;
+  deploy_status: string | null;
+}
+
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as const;
+const SUBJECTS = ['Math', 'Reading', 'Spelling', 'Language Arts', 'History', 'Science'] as const;
+
+const SUBJECT_COLORS: Record<string, string> = {
+  Math: 'bg-blue-500/10 border-blue-500/30 text-blue-300',
+  Reading: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300',
+  Spelling: 'bg-amber-500/10 border-amber-500/30 text-amber-300',
+  'Language Arts': 'bg-purple-500/10 border-purple-500/30 text-purple-300',
+  History: 'bg-orange-500/10 border-orange-500/30 text-orange-300',
+  Science: 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300',
+};
+
 export default function DashboardPage({
   activeQuarter,
   activeWeek,
@@ -46,6 +67,7 @@ export default function DashboardPage({
   const [recentDeploys, setRecentDeploys] = useState<RecentDeploy[]>([]);
   const [stats, setStats] = useState({ announcements: 0, pages: 0, files: 0 });
   const [loading, setLoading] = useState(true);
+  const [pacingRows, setPacingRows] = useState<PacingRow[]>([]);
 
   useEffect(() => {
     loadDashboard();
@@ -70,6 +92,14 @@ export default function DashboardPage({
         .eq('week_id', week.id);
 
       const pacingRows = rows || [];
+      setPacingRows(pacingRows.map(r => ({
+        subject: r.subject,
+        day: r.day,
+        type: r.type,
+        lesson_num: r.lesson_num,
+        in_class: r.in_class,
+        deploy_status: r.deploy_status,
+      })));
       const riskRows: RiskRow[] = pacingRows.map(r => ({
         type: r.type,
         day: r.day,
@@ -307,7 +337,68 @@ export default function DashboardPage({
         </Card>
       </div>
 
-      {/* Quick Actions */}
+      {/* Weekly Calendar */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-primary" /> Weekly Schedule
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {pacingRows.length > 0 ? (
+            <div className="overflow-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-muted">
+                    <th className="p-2 text-left font-semibold w-24">Subject</th>
+                    {DAYS.map(day => (
+                      <th key={day} className="p-2 text-center font-semibold">{day.slice(0, 3)}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {SUBJECTS.filter(subj => pacingRows.some(r => r.subject === subj)).map(subject => (
+                    <tr key={subject} className="border-t border-border/50">
+                      <td className="p-2 font-medium text-muted-foreground whitespace-nowrap">{subject}</td>
+                      {DAYS.map(day => {
+                        const cell = pacingRows.find(r => r.subject === subject && r.day === day);
+                        if (!cell) return <td key={day} className="p-2 text-center text-muted-foreground/30">—</td>;
+                        const isTest = cell.type?.toLowerCase().includes('test');
+                        const colorClass = SUBJECT_COLORS[subject] || 'bg-muted/50 text-foreground';
+                        return (
+                          <td key={day} className="p-2">
+                            <div className={`rounded-md border px-2 py-1.5 text-center ${colorClass} ${isTest ? 'ring-1 ring-destructive' : ''}`}>
+                              <div className="font-semibold truncate">
+                                {cell.type === 'test' ? '📝 Test' : cell.lesson_num ? `L${cell.lesson_num}` : cell.type || '—'}
+                              </div>
+                              {cell.in_class && (
+                                <div className="text-[10px] opacity-70 truncate mt-0.5">{cell.in_class}</div>
+                              )}
+                              {cell.deploy_status === 'DEPLOYED' && (
+                                <CheckCircle2 className="h-3 w-3 mx-auto mt-0.5 text-success" />
+                              )}
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center py-8 text-muted-foreground">
+              <Calendar className="h-8 w-8 mb-2 opacity-40" />
+              <p className="text-sm">No pacing data for this week</p>
+              <Button size="sm" variant="link" onClick={() => navigate('/pacing')} className="mt-1">
+                Go to Pacing Entry →
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Quick Actions</CardTitle>
