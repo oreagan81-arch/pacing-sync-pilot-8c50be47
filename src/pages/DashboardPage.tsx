@@ -67,6 +67,7 @@ export default function DashboardPage({
   const [recentDeploys, setRecentDeploys] = useState<RecentDeploy[]>([]);
   const [stats, setStats] = useState({ announcements: 0, pages: 0, files: 0 });
   const [loading, setLoading] = useState(true);
+  const [pacingRows, setPacingRows] = useState<PacingRow[]>([]);
 
   useEffect(() => {
     loadDashboard();
