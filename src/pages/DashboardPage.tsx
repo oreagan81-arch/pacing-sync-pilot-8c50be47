@@ -32,6 +32,27 @@ interface RecentDeploy {
   created_at: string | null;
 }
 
+interface PacingRow {
+  subject: string;
+  day: string;
+  type: string | null;
+  lesson_num: string | null;
+  in_class: string | null;
+  deploy_status: string | null;
+}
+
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as const;
+const SUBJECTS = ['Math', 'Reading', 'Spelling', 'Language Arts', 'History', 'Science'] as const;
+
+const SUBJECT_COLORS: Record<string, string> = {
+  Math: 'bg-blue-500/10 border-blue-500/30 text-blue-300',
+  Reading: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300',
+  Spelling: 'bg-amber-500/10 border-amber-500/30 text-amber-300',
+  'Language Arts': 'bg-purple-500/10 border-purple-500/30 text-purple-300',
+  History: 'bg-orange-500/10 border-orange-500/30 text-orange-300',
+  Science: 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300',
+};
+
 export default function DashboardPage({
   activeQuarter,
   activeWeek,
