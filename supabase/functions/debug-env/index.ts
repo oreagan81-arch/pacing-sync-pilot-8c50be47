@@ -9,23 +9,28 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  const envKeys: string[] = [];
-  for (const [k] of Object.entries(Deno.env.toObject())) {
-    envKeys.push(k);
+  const urls = [
+    "https://ai-gateway.lovable.dev/v1/models",
+    "https://ai-gateway.lovable.app/v1/models",
+    "https://ai.lovable.dev/v1/models",
+    "https://gateway.lovable.dev/v1/models",
+  ];
+  
+  const results: Record<string, string> = {};
+  for (const url of urls) {
+    try {
+      const resp = await fetch(url, {
+        headers: { "Authorization": `Bearer ${Deno.env.get("LOVABLE_API_KEY") || ""}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      results[url] = `status: ${resp.status}`;
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      results[url] = msg.length > 100 ? msg.slice(0, 100) : msg;
+    }
   }
-  envKeys.sort();
 
-  let dnsResult = "unknown";
-  try {
-    const resp = await fetch("https://ai-gateway.lovable.dev/v1/models", {
-      headers: { "Authorization": `Bearer ${Deno.env.get("LOVABLE_API_KEY") || ""}` },
-    });
-    dnsResult = `status: ${resp.status}`;
-  } catch (e: unknown) {
-    dnsResult = `error: ${e instanceof Error ? e.message : String(e)}`;
-  }
-
-  return new Response(JSON.stringify({ envKeys, dnsResult }, null, 2), {
+  return new Response(JSON.stringify(results, null, 2), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 });
