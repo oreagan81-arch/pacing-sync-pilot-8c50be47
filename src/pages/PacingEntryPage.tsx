@@ -17,6 +17,17 @@ import { evaluateWeekRisk } from '@/lib/risk-engine';
 const SUBJECTS = ['Math', 'Reading', 'Spelling', 'Language Arts', 'History', 'Science'] as const;
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as const;
 
+// Subject name mapping from API keys to our internal names
+const API_SUBJECT_MAP: Record<string, string> = {
+  Math: 'Math',
+  Reading: 'Reading',
+  Spelling: 'Spelling',
+  English: 'Language Arts',
+  'Language Arts': 'Language Arts',
+  History: 'History',
+  Science: 'Science',
+};
+
 const SUBJECT_TYPES: Record<string, string[]> = {
   Math: ['Lesson', 'Test', 'Fact Test', 'Study Guide', 'No Class', '-'],
   Reading: ['Lesson', 'Test', 'Checkout', 'No Class', '-'],
@@ -251,51 +262,62 @@ export default function PacingEntryPage({
   const handleSheetImport = async () => {
     setSheetLoading(true);
     try {
-      // Step 1: Fetch raw data from Google Sheet via Apps Script
       const { data: sheetData, error: sheetErr } = await supabase.functions.invoke('sheets-import', {
-        body: { sheetName: `${activeQuarter} Week ${activeWeek}` },
+        body: { weekNum: activeWeek },
       });
       if (sheetErr) throw new Error(sheetErr.message);
       if (sheetData?.error) throw new Error(sheetData.error);
 
-      const raw = sheetData.raw;
-      if (!raw || !Array.isArray(raw) || raw.length === 0) {
+      const apiData = sheetData.data?.data || sheetData.data;
+      const dates = sheetData.data?.dates;
+      if (!apiData || typeof apiData !== 'object') {
         toast.info('No data found in sheet');
         setSheetLoading(false);
         return;
       }
 
-      // Step 2: Send raw grid to pacing-parse AI for structured extraction
-      const flatText = raw.map((row: any[]) => row.join('\t')).join('\n');
-      const { data: parsed, error: parseErr } = await supabase.functions.invoke('pacing-parse', {
-        body: { pastedText: flatText },
-      });
-      if (parseErr) throw new Error(parseErr.message);
-      if (parsed?.error) throw new Error(parsed.error);
-
-      // Step 3: Apply parsed rows to weekData
-      const rows = parsed.rows || [];
-      if (rows.length === 0) {
-        toast.info('AI could not parse any rows from sheet data');
-        setSheetLoading(false);
-        return;
+      // Set date range from API dates if available
+      if (dates && Array.isArray(dates) && dates.length >= 2) {
+        const start = new Date(dates[0]);
+        const end = new Date(dates[dates.length - 1]);
+        const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        setDateRange(`${fmt(start)}–${fmt(end)}`);
       }
 
+      // Map API response to weekData
       const newData = initWeekData();
-      for (const row of rows) {
-        if (newData[row.subject]?.[row.day]) {
-          newData[row.subject][row.day] = {
-            type: row.type || '',
-            lesson_num: row.lesson_num || '',
-            in_class: row.in_class || '',
-            at_home: row.at_home || '',
+      let cellCount = 0;
+
+      for (const [apiSubject, values] of Object.entries(apiData)) {
+        const subject = API_SUBJECT_MAP[apiSubject];
+        if (!subject || !newData[subject] || !Array.isArray(values)) continue;
+
+        (values as any[]).forEach((val, i) => {
+          const day = DAYS[i];
+          if (!day || !newData[subject][day]) return;
+
+          const cellVal = String(val ?? '');
+          const isTest = cellVal.toLowerCase().includes('test');
+          const isNoClass = cellVal === '-' || cellVal.toLowerCase() === 'no class';
+
+          // Parse lesson number from value
+          const numMatch = cellVal.match(/\d+/);
+          const lessonNum = numMatch ? numMatch[0] : '';
+
+          newData[subject][day] = {
+            type: isTest ? 'Test' : isNoClass ? '-' : 'Lesson',
+            lesson_num: lessonNum,
+            in_class: cellVal,
+            at_home: '',
             resources: '',
-            create_assign: row.type !== '-' && row.type !== 'No Class',
+            create_assign: !isTest && !isNoClass,
           };
-        }
+          cellCount++;
+        });
       }
+
       setWeekData(newData);
-      toast.success(`Imported ${rows.length} cells from Google Sheets`);
+      toast.success(`Imported ${cellCount} cells from Google Sheets`);
     } catch (e: any) {
       toast.error('Sheet import failed', { description: e.message });
     }
@@ -456,8 +478,18 @@ export default function PacingEntryPage({
                     const hideAssign = isFriday || isNoAssignSubject;
                     const isEven = cell.lesson_num ? parseInt(cell.lesson_num) % 2 === 0 : null;
 
+                    // Conditional styling based on cell content
+                    const cellText = cell.in_class?.toLowerCase() || '';
+                    const isTest = cellText.includes('test');
+                    const isReview = cellText.includes('review');
+                    const cardStyle: React.CSSProperties = isTest
+                      ? { backgroundColor: '#fde047' }
+                      : isReview
+                      ? { backgroundColor: '#f3f4f6' }
+                      : {};
+
                     return (
-                      <Card key={day} className="shadow-sm">
+                      <Card key={day} className="shadow-sm" style={cardStyle}>
                         <CardHeader className="p-3 pb-2">
                           <CardTitle className="text-xs font-bold">{day}</CardTitle>
                         </CardHeader>
@@ -489,7 +521,7 @@ export default function PacingEntryPage({
                             placeholder="In Class"
                             value={cell.in_class}
                             onChange={(e) => updateCell(subject, day, 'in_class', e.target.value)}
-                            className="text-xs min-h-[60px] border-l-2"
+                            className={`text-xs min-h-[60px] border-l-2 ${isTest ? 'font-bold text-red-600' : ''}`}
                             style={{ borderLeftColor: '#0065a7' }}
                             rows={2}
                           />
