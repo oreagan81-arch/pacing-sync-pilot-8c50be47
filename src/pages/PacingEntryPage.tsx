@@ -77,6 +77,7 @@ export default function PacingEntryPage({
   const [reminders, setReminders] = useState('');
   const [resources, setResources] = useState('');
   const [saving, setSaving] = useState(false);
+  const [sheetLoading, setSheetLoading] = useState(false);
   const [savedWeeks, setSavedWeeks] = useState<{ id: string; quarter: string; week_num: number }[]>([]);
 
   // Compute risk on every change
