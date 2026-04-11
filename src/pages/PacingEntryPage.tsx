@@ -487,7 +487,9 @@ export default function PacingEntryPage({
                       : isReview
                       ? { backgroundColor: '#f3f4f6' }
                       : {};
-                      <Card key={day} className="shadow-sm">
+
+                    return (
+                      <Card key={day} className="shadow-sm" style={cardStyle}>
                         <CardHeader className="p-3 pb-2">
                           <CardTitle className="text-xs font-bold">{day}</CardTitle>
                         </CardHeader>
