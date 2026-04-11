@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Save, RefreshCw, Zap } from 'lucide-react';
+import { Save, RefreshCw, Zap, Sheet, Loader2 } from 'lucide-react';
 import PasteImportDialog from '@/components/PasteImportDialog';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
