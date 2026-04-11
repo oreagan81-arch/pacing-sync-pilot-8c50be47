@@ -478,7 +478,15 @@ export default function PacingEntryPage({
                     const hideAssign = isFriday || isNoAssignSubject;
                     const isEven = cell.lesson_num ? parseInt(cell.lesson_num) % 2 === 0 : null;
 
-                    return (
+                    // Conditional styling based on cell content
+                    const cellText = cell.in_class?.toLowerCase() || '';
+                    const isTest = cellText.includes('test');
+                    const isReview = cellText.includes('review');
+                    const cardStyle: React.CSSProperties = isTest
+                      ? { backgroundColor: '#fde047' }
+                      : isReview
+                      ? { backgroundColor: '#f3f4f6' }
+                      : {};
                       <Card key={day} className="shadow-sm">
                         <CardHeader className="p-3 pb-2">
                           <CardTitle className="text-xs font-bold">{day}</CardTitle>
