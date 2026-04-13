@@ -168,28 +168,31 @@ export default function PageBuilderPage() {
     setDeploying((p) => ({ ...p, [subject]: false }));
   };
 
-  // Deploy all pages with progress toast
-  const handleDeployAll = async () => {
-    setDeployingAll(true);
-    const subjects = PAGE_SUBJECTS.filter((s) => {
+  const deployableSubjects = useMemo(() => {
+    return PAGE_SUBJECTS.filter((s) => {
       const sRows = s === 'Reading'
         ? rows.filter((r) => r.subject === 'Reading' || r.subject === 'Spelling')
         : rows.filter((r) => r.subject === s);
       return sRows.length > 0;
     });
+  }, [rows]);
 
-    if (subjects.length === 0) {
+  // Deploy all pages with progress toast
+  const handleDeployAll = async () => {
+    setDeployingAll(true);
+
+    if (deployableSubjects.length === 0) {
       toast.error('No data to deploy');
       setDeployingAll(false);
       return;
     }
 
-    const toastId = toast.loading(`Deploying 0/${subjects.length} pages\u2026`);
+    const toastId = toast.loading(`Deploying 0/${deployableSubjects.length} pages\u2026`);
     let done = 0;
     let errors = 0;
 
-    for (const subject of subjects) {
-      toast.loading(`Deploying ${subject} (${done + 1}/${subjects.length})\u2026`, { id: toastId });
+    for (const subject of deployableSubjects) {
+      toast.loading(`Deploying ${subject} (${done + 1}/${deployableSubjects.length})\u2026`, { id: toastId });
       try {
         await handleDeploy(subject);
       } catch {
@@ -199,9 +202,9 @@ export default function PageBuilderPage() {
     }
 
     if (errors > 0) {
-      toast.warning(`Deployed ${done - errors}/${subjects.length} pages (${errors} failed)`, { id: toastId });
+      toast.warning(`Deployed ${done - errors}/${deployableSubjects.length} pages (${errors} failed)`, { id: toastId });
     } else {
-      toast.success(`All ${subjects.length} pages deployed! \u2705`, { id: toastId });
+      toast.success(`All ${deployableSubjects.length} pages deployed! \u2705`, { id: toastId });
     }
     setDeployingAll(false);
   };
