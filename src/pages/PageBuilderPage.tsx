@@ -159,12 +159,21 @@ export default function PageBuilderPage() {
     });
   }, [subjectRows, selectedWeek, activeSubject, config]);
 
-  const getPageUrl = (subject: string, weekNum: number) => {
-    const slug = subject === 'Reading' ? 'reading-spelling' : subject.toLowerCase().replace(/\s+/g, '-');
-    return `week-${weekNum}-${slug}-agenda`;
+  // Canvas page naming: Q4W2, Q3W5, etc.
+  const getPageSlug = (quarter: string, weekNum: number) => {
+    // Extract quarter number from "Q4" or "Quarter 4" etc.
+    const qMatch = quarter.match(/(\d+)/);
+    const qNum = qMatch ? qMatch[1] : quarter;
+    return `q${qNum}w${weekNum}`;
   };
 
-  // Deploy single subject page
+  const getPageTitle = (quarter: string, weekNum: number) => {
+    const qMatch = quarter.match(/(\d+)/);
+    const qNum = qMatch ? qMatch[1] : quarter;
+    return `Q${qNum}W${weekNum}`;
+  };
+
+  // Deploy single subject page via canvas-deploy-page edge function
   const handleDeploy = async (subject: string) => {
     if (!selectedWeek || !config) return;
     const sRows = subject === 'Reading'
@@ -179,17 +188,38 @@ export default function PageBuilderPage() {
     setDeploying((p) => ({ ...p, [subject]: true }));
 
     try {
-      const result = await callEdge<{ status?: string; canvasUrl?: string; error?: string }>('gas-dispatch', {
-        action: 'DEPLOY_AGENDAS',
-        month: selectedMonth,
-        week: storeWeek,
-        subject,
-        courseId: config.courseIds[subject],
+      const courseId = subject === 'Reading'
+        ? (config.autoLogic.togetherLogicCourseId || config.courseIds['Reading'])
+        : config.courseIds[subject];
+      const pageSlug = getPageSlug(selectedWeek.quarter, selectedWeek.week_num);
+      const pageTitle = getPageTitle(selectedWeek.quarter, selectedWeek.week_num);
+      const quarterColor = config.quarterColors[selectedWeek.quarter] || '#0065a7';
+
+      const html = generateCanvasPageHtml({
+        subject: subject === 'Reading' ? 'Reading & Spelling' : subject,
+        rows: sRows,
+        quarter: selectedWeek.quarter,
+        weekNum: selectedWeek.week_num,
+        dateRange: selectedWeek.date_range || '',
+        reminders: selectedWeek.reminders || '',
+        resources: selectedWeek.resources || '',
+        quarterColor,
       });
 
-      if (result.status === 'success') {
-        setDeployStatuses((p) => ({ ...p, [subject]: { status: 'DEPLOYED', canvasUrl: result.canvasUrl } }));
-        toast.success(`${subject} agenda deployed!`, {
+      const result = await callEdge<{ status?: string; canvasUrl?: string; error?: string }>('canvas-deploy-page', {
+        subject,
+        courseId,
+        pageUrl: pageSlug,
+        pageTitle,
+        bodyHtml: html,
+        published: true,
+        setFrontPage: true,
+        weekId: selectedWeekId || null,
+      });
+
+      if (result.status === 'DEPLOYED' || result.status === 'NO_CHANGE') {
+        setDeployStatuses((p) => ({ ...p, [subject]: { status: result.status!, canvasUrl: result.canvasUrl } }));
+        toast.success(`${subject} agenda deployed & set as homepage!`, {
           action: result.canvasUrl ? { label: 'Open', onClick: () => window.open(result.canvasUrl, '_blank') } : undefined,
         });
       } else {
@@ -337,7 +367,7 @@ export default function PageBuilderPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="text-xs text-muted-foreground space-y-1">
-                  <p><strong>Page URL:</strong> {selectedWeek ? getPageUrl(activeSubject, selectedWeek.week_num) : '\u2014'}</p>
+                  <p><strong>Page URL:</strong> {selectedWeek ? getPageSlug(selectedWeek.quarter, selectedWeek.week_num) : '\u2014'}</p>
                   <p><strong>Course ID:</strong> {config?.courseIds[activeSubject] || '\u2014'}</p>
                   {deployStatuses[activeSubject]?.canvasUrl && (
                     <p>
