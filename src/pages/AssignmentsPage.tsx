@@ -35,12 +35,13 @@ interface SimulatedAssignment {
   lessonNum: string;
 }
 
-interface FileRecord {
-  subject: string | null;
-  lesson_num: string | null;
+interface ContentMapRecord {
+  lesson_ref: string;
+  subject: string;
   type: string | null;
-  friendly_name: string | null;
-  drive_file_id: string | null;
+  canonical_name: string | null;
+  canvas_file_id: string | null;
+  canvas_url: string | null;
 }
 
 const CATEGORY_WEIGHTS: Record<string, string> = {
@@ -62,13 +63,13 @@ export default function AssignmentsPage() {
 
   const [deploying, setDeploying] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
-  const [files, setFiles] = useState<FileRecord[]>([]);
+  const [contentMap, setContentMap] = useState<ContentMapRecord[]>([]);
   const [deployResults, setDeployResults] = useState<Record<string, 'DEPLOYED' | 'ERROR' | 'PENDING'>>({});
 
-  // Fetch files table as content map
+  // Fetch content_map table
   useEffect(() => {
-    supabase.from('files').select('subject, lesson_num, type, friendly_name, drive_file_id')
-      .then(({ data }) => { if (data) setFiles(data); });
+    supabase.from('content_map').select('lesson_ref, subject, type, canonical_name, canvas_file_id, canvas_url')
+      .then(({ data }) => { if (data) setContentMap(data as ContentMapRecord[]); });
   }, []);
 
   useEffect(() => {
@@ -88,9 +89,26 @@ export default function AssignmentsPage() {
     return null;
   }, [pacingData]);
 
-  // Check if a file exists in content map
-  const hasFile = (subject: string, lessonNum: string): boolean => {
-    return files.some(f => f.subject === subject && f.lesson_num === lessonNum);
+  // Check if a file exists in content map by matching lesson_ref patterns
+  const findFile = (subject: string, lessonNum: string, type: string): ContentMapRecord | undefined => {
+    // Build expected lesson_ref patterns based on subject and type
+    const subjectPrefix = subject === 'Language Arts' ? 'ELA' : 
+                          subject === 'Reading' ? 'Reading' :
+                          subject === 'Spelling' ? 'Spelling' : subject;
+    
+    // Try exact match patterns like Math_SB_L096, Reading_L001, etc.
+    const paddedNum = lessonNum.padStart(3, '0');
+    return contentMap.find(f => {
+      const ref = f.lesson_ref;
+      // Match patterns like Math_SB_L096, Math_HW_Evens, Reading_L001, etc.
+      if (ref.includes(`_L${paddedNum}`) && f.subject === subject) return true;
+      if (ref.includes(`_${lessonNum}`) && f.subject === subject) return true;
+      return false;
+    });
+  };
+
+  const hasFile = (subject: string, lessonNum: string, type: string = ''): boolean => {
+    return !!findFile(subject, lessonNum, type);
   };
 
   // Build simulated assignments from pacing data
@@ -195,7 +213,7 @@ export default function AssignmentsPage() {
     }
 
     return result.sort((a, b) => a.dayIndex - b.dayIndex);
-  }, [pacingData, config, historyRedirect, files]);
+  }, [pacingData, config, historyRedirect, contentMap]);
 
   const orphanCount = simulated.filter(s => s.isOrphan).length;
   const deployable = simulated.filter(s => !s.isOrphan);
@@ -216,11 +234,17 @@ export default function AssignmentsPage() {
           continue;
         }
 
+        // Find matching file for description link
+        const file = findFile(assignment.subject, assignment.lessonNum, assignment.type);
+        const description = file?.canvas_url
+          ? `<p><a href="${file.canvas_url}">${file.canonical_name || 'Download'}</a></p>`
+          : '';
+
         const res = await callEdge<{ status?: string; error?: string; canvasUrl?: string }>('canvas-deploy-assignment', {
           subject: assignment.subject,
           courseId,
           title: assignment.title,
-          description: '',
+          description,
           points: assignment.points,
           gradingType: 'points',
           assignmentGroup: assignment.groupName,
