@@ -12,7 +12,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { subject, courseId, pageUrl, pageTitle, bodyHtml, published, weekId } = await req.json();
+    const { subject, courseId, pageUrl, pageTitle, bodyHtml, published, setFrontPage, weekId } = await req.json();
 
     if (!courseId || !pageUrl || !pageTitle || !bodyHtml) {
       return new Response(JSON.stringify({ error: "Missing required fields" }), {
@@ -60,13 +60,22 @@ Deno.serve(async (req) => {
 
     // 2. Content hash check — skip if body matches
     if (exists && existingBody === bodyHtml) {
+      // Still set as front page if requested
+      if (setFrontPage && !isFrontPage) {
+        await fetch(`${courseBase}/pages/${pageUrl}`, {
+          method: "PUT",
+          headers: canvasHeaders,
+          body: JSON.stringify({ wiki_page: { front_page: true, published: true } }),
+        });
+      }
+
       await sb.from("deploy_log").insert({
         week_id: weekId || null,
         subject: subject || null,
         action: "page_deploy",
         status: "NO_CHANGE",
         canvas_url: `${canvasBase}/courses/${courseId}/pages/${pageUrl}`,
-        message: "Content unchanged — skipped",
+        message: "Content unchanged — skipped" + (setFrontPage ? " (set as homepage)" : ""),
       });
 
       return new Response(JSON.stringify({
@@ -77,15 +86,17 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 3. Front page protection: force published=true if front_page
+    // 3. Create or update the page
+    // If setFrontPage is requested, include front_page: true in the payload
     let pub = published ?? false;
-    if (isFrontPage) pub = true;
+    if (isFrontPage || setFrontPage) pub = true;
 
     const payload = {
       wiki_page: {
         title: pageTitle,
         body: bodyHtml,
         published: pub,
+        ...(setFrontPage ? { front_page: true } : {}),
       },
     };
 
@@ -118,13 +129,26 @@ Deno.serve(async (req) => {
     const result = await res.json();
     const canvasUrl = `${canvasBase}/courses/${courseId}/pages/${result.url || pageUrl}`;
 
+    // 4. If page was just created (POST), we need a separate PUT to set front_page
+    if (!exists && setFrontPage) {
+      const fpRes = await fetch(`${courseBase}/pages/${result.url || pageUrl}`, {
+        method: "PUT",
+        headers: canvasHeaders,
+        body: JSON.stringify({ wiki_page: { front_page: true } }),
+      });
+      if (!fpRes.ok) {
+        const fpErr = await fpRes.text();
+        console.error("Failed to set front page:", fpErr);
+      }
+    }
+
     await sb.from("deploy_log").insert({
       week_id: weekId || null,
       subject: subject || null,
       action: "page_deploy",
       status: "DEPLOYED",
       canvas_url: canvasUrl,
-      message: `${exists ? "Updated" : "Created"} page: ${pageTitle}`,
+      message: `${exists ? "Updated" : "Created"} page: ${pageTitle}${setFrontPage ? " (set as homepage)" : ""}`,
     });
 
     return new Response(JSON.stringify({ status: "DEPLOYED", canvasUrl }), {
