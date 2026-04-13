@@ -77,12 +77,13 @@ export const useSystemStore = create<SystemState>((set, get) => ({
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const raw = await res.json();
+      const payload = raw.data || raw;
 
-      const dates: string[] = raw.dates || [];
+      const dates: string[] = payload.dates || [];
+      const days: string[] = payload.days || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
       const subjects: Record<string, PacingCell[]> = {};
 
-      for (const [apiKey, values] of Object.entries(raw)) {
-        if (apiKey === 'dates') continue;
+      for (const [apiKey, values] of Object.entries(payload.subjects || {})) {
         const subjectName = API_SUBJECT_MAP[apiKey] || apiKey;
         if (!Array.isArray(values)) continue;
 
