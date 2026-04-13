@@ -63,13 +63,13 @@ export default function AssignmentsPage() {
 
   const [deploying, setDeploying] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
-  const [files, setFiles] = useState<FileRecord[]>([]);
+  const [contentMap, setContentMap] = useState<ContentMapRecord[]>([]);
   const [deployResults, setDeployResults] = useState<Record<string, 'DEPLOYED' | 'ERROR' | 'PENDING'>>({});
 
-  // Fetch files table as content map
+  // Fetch content_map table
   useEffect(() => {
-    supabase.from('files').select('subject, lesson_num, type, friendly_name, drive_file_id')
-      .then(({ data }) => { if (data) setFiles(data); });
+    supabase.from('content_map').select('lesson_ref, subject, type, canonical_name, canvas_file_id, canvas_url')
+      .then(({ data }) => { if (data) setContentMap(data as ContentMapRecord[]); });
   }, []);
 
   useEffect(() => {
