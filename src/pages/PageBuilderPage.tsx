@@ -9,9 +9,11 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useConfig } from '@/lib/config';
 import { generateCanvasPageHtml, type CanvasPageRow } from '@/lib/canvas-html';
-import { callEdge } from '@/lib/edge';
-import { computeContentHash } from '@/lib/assignment-logic';
 import { useRealtimeDeploy } from '@/hooks/use-realtime-deploy';
+import { useSystemStore } from '@/store/useSystemStore';
+import SafetyDiffModal from '@/components/SafetyDiffModal';
+
+const GAS_URL = import.meta.env.VITE_GOOGLE_APPS_SCRIPT_URL;
 
 const PAGE_SUBJECTS = ['Math', 'Reading', 'Language Arts', 'History', 'Science'] as const;
 const DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -42,6 +44,8 @@ export default function PageBuilderPage() {
   const [deploying, setDeploying] = useState<Record<string, boolean>>({});
   const [deployStatuses, setDeployStatuses] = useState<Record<string, { status: string; canvasUrl?: string }>>({});
   const [deployingAll, setDeployingAll] = useState(false);
+  const [diffOpen, setDiffOpen] = useState(false);
+  const { selectedMonth, selectedWeek: storeWeek } = useSystemStore();
 
   // Realtime deploy notifications — update statuses live
   const handleRealtimeEvent = useCallback((event: any) => {
@@ -123,7 +127,6 @@ export default function PageBuilderPage() {
   // Deploy single subject page
   const handleDeploy = async (subject: string) => {
     if (!selectedWeek || !config) return;
-    const quarterColor = config.quarterColors[selectedWeek.quarter] || '#0065a7';
     const sRows = subject === 'Reading'
       ? rows.filter((r) => r.subject === 'Reading' || r.subject === 'Spelling')
       : rows.filter((r) => r.subject === subject);
@@ -133,46 +136,30 @@ export default function PageBuilderPage() {
       return;
     }
 
-    const courseId = config.courseIds[subject];
-    if (!courseId) {
-      toast.error(`No course ID for ${subject}`);
-      return;
-    }
-
-    const pageUrl = getPageUrl(subject, selectedWeek.week_num);
-    const pageTitle = `Week ${selectedWeek.week_num} ${subject === 'Reading' ? 'Reading & Spelling' : subject} Agenda`;
-    const bodyHtml = generateCanvasPageHtml({
-      subject: subject === 'Reading' ? 'Reading & Spelling' : subject,
-      rows: sRows,
-      quarter: selectedWeek.quarter,
-      weekNum: selectedWeek.week_num,
-      dateRange: selectedWeek.date_range || '',
-      reminders: selectedWeek.reminders || '',
-      resources: selectedWeek.resources || '',
-      quarterColor,
-    });
-
     setDeploying((p) => ({ ...p, [subject]: true }));
 
     try {
-      const result = await callEdge<DeployResult>('canvas-deploy-page', {
-        subject,
-        courseId,
-        pageUrl,
-        pageTitle,
-        bodyHtml,
-        published: config.autoLogic.pagePublishDefault,
-        weekId: selectedWeek.id,
+      const res = await fetch(GAS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'DEPLOY_AGENDAS',
+          month: selectedMonth,
+          week: storeWeek,
+          subject,
+          courseId: config.courseIds[subject],
+        }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const result = await res.json();
 
-      setDeployStatuses((p) => ({ ...p, [subject]: { status: result.status, canvasUrl: result.canvasUrl } }));
-
-      if (result.status === 'NO_CHANGE') {
-        toast.info(`${subject} — no changes`);
-      } else {
-        toast.success(`${subject} deployed!`, {
+      if (result.status === 'success') {
+        setDeployStatuses((p) => ({ ...p, [subject]: { status: 'DEPLOYED', canvasUrl: result.canvasUrl } }));
+        toast.success(`${subject} agenda deployed!`, {
           action: result.canvasUrl ? { label: 'Open', onClick: () => window.open(result.canvasUrl, '_blank') } : undefined,
         });
+      } else {
+        throw new Error(result.error || 'Unknown error');
       }
     } catch (e: any) {
       toast.error(`Deploy failed — ${subject}`, { description: e.message });
@@ -181,28 +168,31 @@ export default function PageBuilderPage() {
     setDeploying((p) => ({ ...p, [subject]: false }));
   };
 
-  // Deploy all pages with progress toast
-  const handleDeployAll = async () => {
-    setDeployingAll(true);
-    const subjects = PAGE_SUBJECTS.filter((s) => {
+  const deployableSubjects = useMemo(() => {
+    return PAGE_SUBJECTS.filter((s) => {
       const sRows = s === 'Reading'
         ? rows.filter((r) => r.subject === 'Reading' || r.subject === 'Spelling')
         : rows.filter((r) => r.subject === s);
       return sRows.length > 0;
     });
+  }, [rows]);
 
-    if (subjects.length === 0) {
+  // Deploy all pages with progress toast
+  const handleDeployAll = async () => {
+    setDeployingAll(true);
+
+    if (deployableSubjects.length === 0) {
       toast.error('No data to deploy');
       setDeployingAll(false);
       return;
     }
 
-    const toastId = toast.loading(`Deploying 0/${subjects.length} pages\u2026`);
+    const toastId = toast.loading(`Deploying 0/${deployableSubjects.length} pages\u2026`);
     let done = 0;
     let errors = 0;
 
-    for (const subject of subjects) {
-      toast.loading(`Deploying ${subject} (${done + 1}/${subjects.length})\u2026`, { id: toastId });
+    for (const subject of deployableSubjects) {
+      toast.loading(`Deploying ${subject} (${done + 1}/${deployableSubjects.length})\u2026`, { id: toastId });
       try {
         await handleDeploy(subject);
       } catch {
@@ -212,9 +202,9 @@ export default function PageBuilderPage() {
     }
 
     if (errors > 0) {
-      toast.warning(`Deployed ${done - errors}/${subjects.length} pages (${errors} failed)`, { id: toastId });
+      toast.warning(`Deployed ${done - errors}/${deployableSubjects.length} pages (${errors} failed)`, { id: toastId });
     } else {
-      toast.success(`All ${subjects.length} pages deployed! \u2705`, { id: toastId });
+      toast.success(`All ${deployableSubjects.length} pages deployed! \u2705`, { id: toastId });
     }
     setDeployingAll(false);
   };
@@ -258,8 +248,8 @@ export default function PageBuilderPage() {
           <Button
             variant="deploy"
             size="sm"
-            onClick={handleDeployAll}
-            disabled={deployingAll || !selectedWeekId}
+            onClick={() => setDiffOpen(true)}
+            disabled={deployingAll || !selectedWeekId || deployableSubjects.length === 0}
             className="gap-1.5"
           >
             {deployingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Rocket className="h-3.5 w-3.5" />}
@@ -267,6 +257,17 @@ export default function PageBuilderPage() {
           </Button>
         </div>
       </div>
+
+      <SafetyDiffModal
+        open={diffOpen}
+        onOpenChange={setDiffOpen}
+        month={selectedMonth}
+        week={storeWeek}
+        action="DEPLOY_AGENDAS"
+        itemCount={deployableSubjects.length}
+        items={deployableSubjects.map(s => ({ label: `${s === 'Reading' ? 'Reading & Spelling' : s} Agenda`, subject: s }))}
+        onApprove={handleDeployAll}
+      />
 
       {!selectedWeekId ? (
         <Card>
