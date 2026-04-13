@@ -141,7 +141,7 @@ export default function PageBuilderPage() {
     try {
       const res = await fetch(GAS_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        redirect: 'follow',
         body: JSON.stringify({
           action: 'DEPLOY_AGENDAS',
           month: selectedMonth,
