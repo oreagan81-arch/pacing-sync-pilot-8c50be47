@@ -1,6 +1,7 @@
 /**
- * THALES OS — Assignments Gatekeeper (v21.0)
- * Simulation view: previews what will be created before POST to GAS.
+ * THALES OS — Assignments Gatekeeper (v22.0)
+ * Deploys assignments directly to Canvas via canvas-deploy-assignment edge function.
+ * Orphan detection: checks files table for matching content.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,11 +9,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Rocket, Loader2, Zap, AlertCircle, ArrowRightLeft, ShieldCheck } from 'lucide-react';
+import { Rocket, Loader2, Zap, AlertCircle, ArrowRightLeft, ShieldCheck, CircleAlert, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSystemStore, type PacingCell } from '@/store/useSystemStore';
 import { useConfig } from '@/lib/config';
 import { callEdge } from '@/lib/edge';
+import { supabase } from '@/integrations/supabase/client';
 import SafetyDiffModal from '@/components/SafetyDiffModal';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -28,6 +30,17 @@ interface SimulatedAssignment {
   points: number;
   isSynthetic: boolean;
   type: string;
+  isOrphan: boolean;
+  dueDate: string;
+  lessonNum: string;
+}
+
+interface FileRecord {
+  subject: string | null;
+  lesson_num: string | null;
+  type: string | null;
+  friendly_name: string | null;
+  drive_file_id: string | null;
 }
 
 const CATEGORY_WEIGHTS: Record<string, string> = {
@@ -49,9 +62,18 @@ export default function AssignmentsPage() {
 
   const [deploying, setDeploying] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
+  const [files, setFiles] = useState<FileRecord[]>([]);
+  const [deployResults, setDeployResults] = useState<Record<string, 'DEPLOYED' | 'ERROR' | 'PENDING'>>({});
+
+  // Fetch files table as content map
+  useEffect(() => {
+    supabase.from('files').select('subject, lesson_num, type, friendly_name, drive_file_id')
+      .then(({ data }) => { if (data) setFiles(data); });
+  }, []);
 
   useEffect(() => {
     fetchPacingData(selectedMonth, selectedWeek);
+    setDeployResults({});
   }, [selectedMonth, selectedWeek, fetchPacingData]);
 
   // Check for History/Science redirect
@@ -66,6 +88,11 @@ export default function AssignmentsPage() {
     return null;
   }, [pacingData]);
 
+  // Check if a file exists in content map
+  const hasFile = (subject: string, lessonNum: string): boolean => {
+    return files.some(f => f.subject === subject && f.lesson_num === lessonNum);
+  };
+
   // Build simulated assignments from pacing data
   const simulated: SimulatedAssignment[] = useMemo(() => {
     if (!pacingData || !config) return [];
@@ -76,25 +103,22 @@ export default function AssignmentsPage() {
       const cells = pacingData.subjects[subject];
       if (!cells) continue;
 
-      // History/Science redirect: skip the empty one
       if (historyRedirect && subject === historyRedirect.from) continue;
 
       const prefix = config.assignmentPrefixes[subject] || '';
 
       cells.forEach((cell: PacingCell, dayIdx: number) => {
         const day = DAYS[dayIdx];
+        const dueDate = pacingData.dates?.[dayIdx] || '';
 
         // Friday exception
         if (dayIdx === 4) return;
-
         if (cell.isNoClass || !cell.value || cell.value === '-') return;
 
         // Shurley English Filter: only CP or Test
         if (subject === 'Language Arts') {
           const upper = cell.value.toUpperCase();
-          const isCP = upper.includes('CP');
-          const isTest = cell.isTest;
-          if (!isCP && !isTest) return;
+          if (!upper.includes('CP') && !cell.isTest) return;
         }
 
         // Spelling Filter: only Test
@@ -103,30 +127,25 @@ export default function AssignmentsPage() {
         // Math Triple Sequence
         if (subject === 'Math' && cell.isTest) {
           const num = cell.lessonNum;
-          // Written Test
           result.push({
-            id: `sim_${idCounter++}`,
-            day, dayIndex: dayIdx, subject,
+            id: `sim_${idCounter++}`, day, dayIndex: dayIdx, subject, dueDate, lessonNum: num,
             title: `${prefix} Written Test ${num}`,
-            groupName: 'Written Assessments',
-            points: 100, isSynthetic: false, type: 'Test',
+            groupName: 'Written Assessments', points: 100, isSynthetic: false, type: 'Test',
+            isOrphan: !hasFile('Math', num),
           });
-          // Fact Test
           result.push({
-            id: `sim_${idCounter++}`,
-            day, dayIndex: dayIdx, subject,
+            id: `sim_${idCounter++}`, day, dayIndex: dayIdx, subject, dueDate, lessonNum: num,
             title: `${prefix} Fact Test ${num}`,
-            groupName: 'Fact Assessments',
-            points: 100, isSynthetic: true, type: 'Fact Test',
+            groupName: 'Fact Assessments', points: 100, isSynthetic: true, type: 'Fact Test',
+            isOrphan: !hasFile('Math', num),
           });
-          // Study Guide (Day N-1)
           if (dayIdx > 0) {
             result.push({
-              id: `sim_${idCounter++}`,
-              day: DAYS[dayIdx - 1], dayIndex: dayIdx - 1, subject,
+              id: `sim_${idCounter++}`, day: DAYS[dayIdx - 1], dayIndex: dayIdx - 1, subject,
+              dueDate: pacingData.dates?.[dayIdx - 1] || '', lessonNum: num,
               title: `${prefix} Study Guide ${num}`,
-              groupName: 'Homework/Class Work',
-              points: 0, isSynthetic: true, type: 'Study Guide',
+              groupName: 'Homework/Class Work', points: 0, isSynthetic: true, type: 'Study Guide',
+              isOrphan: false, // study guides don't need files
             });
           }
           return;
@@ -136,19 +155,19 @@ export default function AssignmentsPage() {
         let title = '';
         let groupName = 'Assignments';
         let points = 100;
+        const num = cell.lessonNum;
 
         if (subject === 'Math') {
-          const num = cell.lessonNum;
           const isEven = num ? parseInt(num) % 2 === 0 : false;
           title = `${prefix} ${isEven ? 'Evens' : 'Odds'} HW — Lesson ${num}`;
           groupName = 'Homework/Class Work';
         } else if (subject === 'Reading') {
           title = cell.isTest
-            ? `${prefix} Mastery Test ${cell.lessonNum}`
-            : `${prefix} Reading HW ${cell.lessonNum}`;
+            ? `${prefix} Mastery Test ${num}`
+            : `${prefix} Reading HW ${num}`;
           groupName = cell.isTest ? 'Assessments' : 'Homework';
         } else if (subject === 'Spelling') {
-          title = `${prefix} Spelling Test ${cell.lessonNum}`;
+          title = `${prefix} Spelling Test ${num}`;
           groupName = 'Assessments';
         } else if (subject === 'Language Arts') {
           const upper = cell.value.toUpperCase();
@@ -156,48 +175,77 @@ export default function AssignmentsPage() {
             title = `${prefix} Shurley Test`;
             groupName = 'Assessments';
           } else if (upper.includes('CP')) {
-            title = `${prefix} Classroom Practice ${cell.lessonNum}`;
+            title = `${prefix} Classroom Practice ${num}`;
             groupName = 'Classwork/Homework';
           }
         } else {
           title = `${subject} — ${cell.value}`;
         }
 
+        // History/Science don't need file matching
+        const skipOrphanCheck = subject === 'History' || subject === 'Science';
+
         result.push({
-          id: `sim_${idCounter++}`,
-          day, dayIndex: dayIdx, subject,
+          id: `sim_${idCounter++}`, day, dayIndex: dayIdx, subject, dueDate, lessonNum: num,
           title, groupName, points,
           isSynthetic: false, type: cell.isTest ? 'Test' : 'Lesson',
+          isOrphan: skipOrphanCheck ? false : !hasFile(subject, num),
         });
       });
     }
 
     return result.sort((a, b) => a.dayIndex - b.dayIndex);
-  }, [pacingData, config, historyRedirect]);
+  }, [pacingData, config, historyRedirect, files]);
+
+  const orphanCount = simulated.filter(s => s.isOrphan).length;
+  const deployable = simulated.filter(s => !s.isOrphan);
 
   const handleDeploy = async () => {
+    if (!config) return;
     setDeploying(true);
-    try {
-      const result = await callEdge<{ status?: string; error?: string }>('gas-dispatch', {
-        action: 'DEPLOY_ASSIGNMENTS',
-        month: selectedMonth,
-        week: selectedWeek,
-        assignments: simulated.map(s => ({
-          title: s.title,
-          subject: s.subject,
-          groupName: s.groupName,
-          points: s.points,
-          day: s.day,
-        })),
-      });
+    const results: Record<string, 'DEPLOYED' | 'ERROR' | 'PENDING'> = {};
+    let successCount = 0;
+    let errorCount = 0;
 
-      if (result.status !== 'success') {
-        throw new Error(result.error || 'Deployment failed');
+    for (const assignment of deployable) {
+      try {
+        const courseId = config.courseIds[assignment.subject];
+        if (!courseId) {
+          results[assignment.id] = 'ERROR';
+          errorCount++;
+          continue;
+        }
+
+        const res = await callEdge<{ status?: string; error?: string; canvasUrl?: string }>('canvas-deploy-assignment', {
+          subject: assignment.subject,
+          courseId,
+          title: assignment.title,
+          description: '',
+          points: assignment.points,
+          gradingType: 'points',
+          assignmentGroup: assignment.groupName,
+          dueDate: assignment.dueDate || undefined,
+          omitFromFinal: assignment.type === 'Study Guide',
+        });
+
+        if (res.status === 'DEPLOYED') {
+          results[assignment.id] = 'DEPLOYED';
+          successCount++;
+        } else {
+          results[assignment.id] = 'ERROR';
+          errorCount++;
+        }
+      } catch {
+        results[assignment.id] = 'ERROR';
+        errorCount++;
       }
+    }
 
-      toast.success(`Deployed ${simulated.length} assignments!`);
-    } catch (e: any) {
-      toast.error('Deployment failed', { description: e.message });
+    setDeployResults(results);
+    if (errorCount === 0) {
+      toast.success(`Deployed ${successCount} assignments to Canvas!`);
+    } else {
+      toast.warning(`Deployed ${successCount}, failed ${errorCount}`);
     }
     setDeploying(false);
   };
@@ -226,16 +274,21 @@ export default function AssignmentsPage() {
 
         <div className="ml-auto flex items-center gap-2">
           {simulated.length > 0 && (
-            <Badge variant="outline" className="text-xs">{simulated.length} assignments</Badge>
+            <Badge variant="outline" className="text-xs">{deployable.length} deployable</Badge>
+          )}
+          {orphanCount > 0 && (
+            <Badge variant="destructive" className="text-xs gap-1">
+              <CircleAlert className="h-3 w-3" /> {orphanCount} orphans
+            </Badge>
           )}
           <Button
             onClick={() => setDiffOpen(true)}
-            disabled={deploying || simulated.length === 0 || isLoading}
+            disabled={deploying || deployable.length === 0 || isLoading}
             className="gap-1.5 bg-success hover:bg-success/90 text-success-foreground"
             size="sm"
           >
             <Rocket className="h-3.5 w-3.5" />
-            Deploy All
+            Deploy to Canvas
           </Button>
         </div>
       </div>
@@ -280,6 +333,7 @@ export default function AssignmentsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="text-xs w-[80px]">Status</TableHead>
                     <TableHead className="text-xs w-[100px]">Day</TableHead>
                     <TableHead className="text-xs">Subject</TableHead>
                     <TableHead className="text-xs">Assignment Title</TableHead>
@@ -289,35 +343,52 @@ export default function AssignmentsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {simulated.map((row) => (
-                    <TableRow key={row.id} className={row.isSynthetic ? 'bg-primary/5' : ''}>
-                      <TableCell className="text-xs font-medium text-primary">
-                        {row.dayIndex === 4 ? (
-                          <span className="text-muted-foreground italic">Friday</span>
-                        ) : row.day}
-                      </TableCell>
-                      <TableCell className="text-xs font-semibold">{row.subject}</TableCell>
-                      <TableCell className="text-xs">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="font-semibold">{row.title}</span>
-                          {row.isSynthetic && (
-                            <span className="text-[9px] text-primary/70 font-mono uppercase tracking-tight flex items-center gap-1">
-                              <Zap size={10} className="fill-current" /> Auto-Generated
-                            </span>
+                  {simulated.map((row) => {
+                    const status = deployResults[row.id];
+                    return (
+                      <TableRow key={row.id} className={
+                        row.isOrphan ? 'bg-destructive/10' :
+                        row.isSynthetic ? 'bg-primary/5' :
+                        status === 'DEPLOYED' ? 'bg-success/10' :
+                        status === 'ERROR' ? 'bg-destructive/10' : ''
+                      }>
+                        <TableCell className="text-xs">
+                          {row.isOrphan ? (
+                            <Badge variant="destructive" className="text-[9px] gap-0.5">
+                              🔴 Missing
+                            </Badge>
+                          ) : status === 'DEPLOYED' ? (
+                            <CheckCircle2 className="h-4 w-4 text-success" />
+                          ) : status === 'ERROR' ? (
+                            <CircleAlert className="h-4 w-4 text-destructive" />
+                          ) : (
+                            <Badge variant="outline" className="text-[9px]">Ready</Badge>
                           )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-[10px] text-muted-foreground uppercase tracking-wider font-mono">
-                        {row.groupName}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-[9px] font-bold tabular-nums">
-                          {CATEGORY_WEIGHTS[row.groupName] || '—'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-xs text-center font-mono">{row.points}</TableCell>
-                    </TableRow>
-                  ))}
+                        </TableCell>
+                        <TableCell className="text-xs font-medium text-primary">{row.day}</TableCell>
+                        <TableCell className="text-xs font-semibold">{row.subject}</TableCell>
+                        <TableCell className="text-xs">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-semibold">{row.title}</span>
+                            {row.isSynthetic && (
+                              <span className="text-[9px] text-primary/70 font-mono uppercase tracking-tight flex items-center gap-1">
+                                <Zap size={10} className="fill-current" /> Auto-Generated
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-[10px] text-muted-foreground uppercase tracking-wider font-mono">
+                          {row.groupName}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-[9px] font-bold tabular-nums">
+                            {CATEGORY_WEIGHTS[row.groupName] || '—'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-center font-mono">{row.points}</TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -339,7 +410,7 @@ export default function AssignmentsPage() {
       <div className="flex items-center gap-3 p-4 bg-accent/5 border border-border rounded-xl">
         <AlertCircle size={16} className="text-primary shrink-0" />
         <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest leading-relaxed">
-          Gatekeeper v21.0: Math Triple Sequence active. Shurley CP-only filter active. Spelling Test-only filter active.
+          Gatekeeper v22.0: Canvas Direct Deploy active. Orphan detection via content map. Math Triple Sequence active.
         </p>
       </div>
 
@@ -349,8 +420,8 @@ export default function AssignmentsPage() {
         month={selectedMonth}
         week={selectedWeek}
         action="DEPLOY_ASSIGNMENTS"
-        itemCount={simulated.length}
-        items={simulated.map(s => ({ label: s.title, subject: s.subject }))}
+        itemCount={deployable.length}
+        items={deployable.map(s => ({ label: s.title, subject: s.subject }))}
         onApprove={handleDeploy}
       />
     </div>
