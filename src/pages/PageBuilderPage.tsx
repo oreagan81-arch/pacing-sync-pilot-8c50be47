@@ -9,9 +9,11 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useConfig } from '@/lib/config';
 import { generateCanvasPageHtml, type CanvasPageRow } from '@/lib/canvas-html';
-import { callEdge } from '@/lib/edge';
-import { computeContentHash } from '@/lib/assignment-logic';
 import { useRealtimeDeploy } from '@/hooks/use-realtime-deploy';
+import { useSystemStore } from '@/store/useSystemStore';
+import SafetyDiffModal from '@/components/SafetyDiffModal';
+
+const GAS_URL = import.meta.env.VITE_GOOGLE_APPS_SCRIPT_URL;
 
 const PAGE_SUBJECTS = ['Math', 'Reading', 'Language Arts', 'History', 'Science'] as const;
 const DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -42,6 +44,8 @@ export default function PageBuilderPage() {
   const [deploying, setDeploying] = useState<Record<string, boolean>>({});
   const [deployStatuses, setDeployStatuses] = useState<Record<string, { status: string; canvasUrl?: string }>>({});
   const [deployingAll, setDeployingAll] = useState(false);
+  const [diffOpen, setDiffOpen] = useState(false);
+  const { selectedMonth, selectedWeek: storeWeek } = useSystemStore();
 
   // Realtime deploy notifications — update statuses live
   const handleRealtimeEvent = useCallback((event: any) => {
