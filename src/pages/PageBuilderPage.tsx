@@ -181,6 +181,19 @@ export default function PageBuilderPage() {
       });
     }
 
+    // History/Science redirect routing — inactive subject shows redirect
+    const activeHs = selectedWeek.active_hs_subject;
+    if ((activeSubject === 'History' || activeSubject === 'Science') && activeHs && activeHs !== activeSubject) {
+      return generateRedirectPageHtml({
+        thisSubject: activeSubject as 'History' | 'Science',
+        activeSubject: activeHs as 'History' | 'Science',
+        weekNum: selectedWeek.week_num,
+        quarter: selectedWeek.quarter,
+        dateRange: selectedWeek.date_range || '',
+        quarterColor,
+      });
+    }
+
     if (subjectRows.length === 0) return '';
     return generateCanvasPageHtml({
       subject: activeSubject === 'Reading' ? 'Reading & Spelling' : activeSubject,
