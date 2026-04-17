@@ -152,7 +152,8 @@ export default function PacingEntryPage({
             date_range: dateRange,
             reminders,
             resources,
-          },
+            active_hs_subject: activeHsSubject === 'Both' ? null : activeHsSubject,
+          } as any,
           { onConflict: 'quarter,week_num' }
         )
         .select('id')
@@ -219,6 +220,7 @@ export default function PacingEntryPage({
       setDateRange(weekData2.date_range || '');
       setReminders(weekData2.reminders || '');
       setResources(weekData2.resources || '');
+      setActiveHsSubject(((weekData2 as any).active_hs_subject as string) || 'Both');
     }
 
     if (rows) {
