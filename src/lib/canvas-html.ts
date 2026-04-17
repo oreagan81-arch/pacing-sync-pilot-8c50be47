@@ -170,13 +170,7 @@ ${items}
   }
 
   if (allResources.length > 0) {
-    const items = allResources.map((trimmed) => {
-      if (trimmed.startsWith('http')) {
-        const label = trimmed.split('/').pop() || 'Resource';
-        return `        <p style="line-height: 1.5;"><a href="${trimmed}" target="_blank">${label}</a></p>`;
-      }
-      return `        <p style="line-height: 1.5;">${trimmed}</p>`;
-    }).join('\n');
+    const items = allResources.map(renderResourceLine).filter(Boolean).join('\n');
     parts.push(`    <div id="kl_custom_block_5" class="">
         <h3 style="background-color: #00c0a5; color: #ffffff; border-color: #00c0a5;"><i class="fas fa-question" aria-hidden="true"><span class="dp-icon-content" style="display: none;">&nbsp;</span></i>Resources</h3>
 ${items}
