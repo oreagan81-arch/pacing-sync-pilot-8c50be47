@@ -197,16 +197,25 @@ ${items}
       continue;
     }
 
-    // Build In Class content with auto-linked refs and assignment hyperlink
-    let brevityText = applyBrevity(row.subject, row.lesson_num, row.in_class || '');
-    brevityText = injectFileLinks(brevityText, contentMap, row.subject);
-    brevityText = injectAssignmentLink(brevityText, row.canvas_url);
+    // Build In Class content with auto-linked refs and assignment hyperlink.
+    // Empty in_class → muted "Lesson plan TBD" placeholder so the page never has a blank paragraph.
+    const rawInClass = (row.in_class || '').trim();
+    let brevityText: string;
+    if (!rawInClass) {
+      brevityText = '<em style="color: #888;">Lesson plan TBD</em>';
+    } else {
+      brevityText = applyBrevity(row.subject, row.lesson_num, rawInClass);
+      brevityText = injectFileLinks(brevityText, contentMap, row.subject);
+      brevityText = injectAssignmentLink(brevityText, row.canvas_url);
+    }
 
     // For multiple subjects on the same day (Reading tab merges Reading + Spelling)
     const extraRows = dayRows.slice(1);
     const extraInClass = extraRows
       .map((r) => {
-        let t = applyBrevity(r.subject, r.lesson_num, r.in_class || '');
+        const raw = (r.in_class || '').trim();
+        if (!raw) return `        <p style="line-height: 1.5;"><em style="color: #888;">Lesson plan TBD</em></p>`;
+        let t = applyBrevity(r.subject, r.lesson_num, raw);
         t = injectFileLinks(t, contentMap, r.subject);
         t = injectAssignmentLink(t, r.canvas_url);
         return `        <p style="line-height: 1.5;">${t}</p>`;
