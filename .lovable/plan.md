@@ -1,58 +1,59 @@
 
-The user wants a premium Canvas Weekly Agenda Page engine. Looking at existing code:
+Audit of existing code:
+- `supabase/functions/canvas-deploy-assignment/index.ts` exists — handles course routing, group resolution, due_at conversion, create vs update via `existingId`, logs to `deploy_log`, updates `pacing_rows`. ✅ Solid foundation.
+- `src/lib/assignment-logic.ts` exists — `generateAssignmentTitle()` produces SM5/RM4/ELA4-prefixed titles, `resolveAssignmentGroup()` maps subject+type → group/points, `computeContentHash()` for change detection. ✅
+- `src/pages/AssignmentsPage.tsx` exists — needs verification of preview/deploy UX.
 
-- `src/lib/canvas-html.ts` already generates Canvas HTML with banner, reminders, resources, daily blocks, In Class/At Home
-- `supabase/functions/canvas-deploy-page/index.ts` already does safe-overwrite (body hash compare → NO_CHANGE), front-page activation, skip unchanged
-- `src/pages/PageBuilderPage.tsx` is the UI
+Gaps to close for "production-grade":
+1. **Change detection** — edge function doesn't compare `content_hash`; redeploys even when nothing changed. Need to skip with `NO_CHANGE` status when hash matches stored `pacing_rows.content_hash`.
+2. **DST-correct due dates** — current `toDueAt()` hardcodes EST (+5h), wrong half the year. Need real America/New_York handling.
+3. **Retries + notifications** — match the page engine: 3-attempt retry on 5xx/429, write to `deploy_notifications` on success/error.
+4. **Preview screen** — need a dedicated preview UI that shows, per pacing row: resolved title, course, assignment group, points, due date (in ET), description preview, and current state (NEW / UPDATE / NO_CHANGE / SKIP). Then a "Deploy Selected" with the existing `SafetyDiffModal`.
+5. **Friday + history/science skip rules** — config has `fridayNoHomework` and `historyScienceNoAssign` flags; surface as SKIP rows in preview with reason.
+6. **Description HTML** — assignments currently get `description: ""`. Inject a small description with lesson context + auto-linked content_map references (reuse `injectFileLinks` from the page engine).
 
-So most of this exists. The user is asking to LEVEL IT UP to "premium" — better mobile typography, friendly file links, assignment link injection, polish across all 6 subjects.
+## Plan: Premium Assignment Deployment Engine
 
-Gaps to address:
-1. **Friendly file links** — current HTML doesn't auto-link `content_map` entries when pacing references a lesson (e.g., "Lesson 96" → link to canonical file URL)
-2. **Assignment link injection** — when a `pacing_row` has `canvas_url` (deployed assignment), the In Class line should hyperlink to it
-3. **Mobile typography** — current template uses fixed `width: 60%` headers that break on mobile; needs responsive inline styles
-4. **Homeroom support** — current `BLOCK_IDS`/`DAYS_ORDER` only handles M-F school subjects; Homeroom course (22254) needs its own template variant (announcements-style, no daily blocks)
-5. **Premium polish** — better spacing, typography hierarchy, consistent icon usage, quarter-color accents beyond just the banner
-6. **PageBuilderPage UI** — preview rendering, per-subject deploy buttons, "Deploy All 6" with safety diff, set-as-front-page toggle per course
+### 1. Upgrade `canvas-deploy-assignment` edge function
+- Accept new fields: `contentHash`, `rowId` (already accepted), and check existing `pacing_rows.content_hash` — if equal AND `canvas_assignment_id` exists → return `NO_CHANGE`, log skip, no Canvas call
+- Replace `toDueAt()` with proper DST-aware ET → UTC conversion using `Intl.DateTimeFormat` offset lookup
+- Add `fetchWithRetry()` helper (3 attempts, exp backoff on 5xx/429) — mirror the pattern from `canvas-deploy-page`
+- On success: insert `deploy_notifications` (level=success, title="Assignment deployed", entity_ref=canvas_url)
+- On error: insert `deploy_notifications` (level=error)
+- Persist `content_hash` back to `pacing_rows` after successful deploy
 
-## Plan: Premium Canvas Page Engine
+### 2. New helper `src/lib/assignment-build.ts`
+- `buildAssignmentPayload(row, week, config, contentMap)` → returns `{ title, description, points, gradingType, assignmentGroup, courseId, dueDate, omitFromFinal, contentHash, skipReason? }`
+- Encapsulates: course routing (incl. Reading+Spelling Together Logic → 21919), prefix lookup, group resolution, Friday/History/Science skip rules, due date = day-of-week mapped to week start
+- Description = subject-specific short HTML (e.g. "Complete Lesson 96 odds. Show all work.") + `injectFileLinks()` for content_map auto-links
 
-### 1. Enrich `src/lib/canvas-html.ts`
-- **Friendly file links**: accept `contentMap` array; scan `in_class`/`at_home` text for lesson refs (`L\d+`, `SG\d+`, `Lesson \d+`) → wrap with `<a href="canvas_url">` from matching content_map entry
-- **Assignment hyperlinks**: when `row.canvas_url` exists, wrap the lesson title in In Class with link to assignment
-- **Mobile-responsive styles**: replace fixed `width: 60%` with `max-width: 100%; width: auto;` on H4 headers; ensure no horizontal overflow
-- **Premium typography**: tighter line-height on `<p>`, consistent `<strong>` for lesson nums, italic for "no homework" notes
-- **Quarter-color accents**: extend quarter color beyond banner — apply to In Class/At Home dividers as subtle left border instead of black
+### 3. Rebuild `src/pages/AssignmentsPage.tsx` with preview-first flow
+- Top: week selector + subject filter chips (All / Math / Reading / LA / Spelling)
+- Table of pacing rows for selected week with computed columns:
+  - Status badge: NEW (no canvas_assignment_id) / UPDATE (hash differs) / NO_CHANGE / SKIP (with reason tooltip) / ERROR
+  - Title (resolved), Course, Group, Points, Due (formatted in ET), checkbox
+- Row expand → shows full description preview (rendered HTML)
+- "Deploy Selected" button → `SafetyDiffModal` listing only NEW + UPDATE rows → batches calls to `canvas-deploy-assignment`
+- "Deploy All Pending" shortcut (selects all NEW/UPDATE)
+- Toast feedback via existing `useRealtimeDeploy` hook
 
-### 2. New `generateHomeroomPageHtml()` in same file
-- Different structure: banner + reminders + announcements digest + birthdays + resources
-- No daily blocks (Homeroom isn't lesson-based)
-- Pulls from `newsletters` table latest entry if available
+### 4. Wire content_hash flow
+- Compute on client when building payload, send to edge function
+- Edge function stores it in `pacing_rows.content_hash` after success
 
-### 3. Update `canvas-deploy-page` edge function
-- Already does body-hash compare ✅, front_page logic ✅
-- **Add**: insert into `deploy_notifications` on success/error (success → info, error → error level)
-- **Add**: 3-attempt retry on 5xx Canvas responses with exponential backoff
+### Technical details (devs only)
+- DST conversion: format target date with `Intl.DateTimeFormat('en-US', {timeZone:'America/New_York', timeZoneName:'shortOffset'})` to extract `GMT-4` vs `GMT-5`
+- Course routing already in `useSystemStore`; reuse via `system_config.course_ids`
+- Spelling routes to Reading course (21919) per Together Logic memory
 
-### 4. Rebuild `PageBuilderPage.tsx`
-- Subject grid (6 cards: Math, Reading, LA, Science, History, Homeroom)
-- Each card: live HTML preview (sandboxed iframe), Last Deployed timestamp, status badge (DEPLOYED/NO_CHANGE/ERROR/PENDING), "Set as Front Page" toggle, Deploy button
-- Top bar: week selector + "Deploy All Subjects" → opens existing `SafetyDiffModal` → batches calls to `canvas-deploy-page`
-- Hash-skip indicator: cards show "✓ Up to date" when last deploy was NO_CHANGE
-
-### 5. Auto-link helper `src/lib/auto-link.ts`
-- `injectFileLinks(text, contentMap, subject)` — regex-replaces lesson refs with anchor tags
-- `injectAssignmentLink(text, lessonNum, canvasUrl)` — wraps the lesson title
-
-### Out of scope
-- Editing `canvas-html.ts` for non-school subjects beyond Homeroom
-- Drag-to-reorder day blocks
-- Per-day custom icon override
+### Out of scope (later prompts)
+- Bulk re-grading or Canvas SpeedGrader integration
+- Assignment override (per-student due dates)
+- Quiz/discussion deployment (only standard assignments here)
 
 ### Order
-1. Auto-link helper + canvas-html upgrade
-2. Homeroom variant
-3. Edge function retry + notifications
-4. PageBuilderPage rebuild with preview + safety diff
+1. `assignment-build.ts` helper
+2. Edge function upgrade (DST + hash skip + retry + notifications)
+3. AssignmentsPage rebuild with preview table
 
-After implementation, you'll verify in preview by opening Page Builder, picking a week with pacing data, and clicking Deploy All.
+After building, you'll verify by selecting a current week, reviewing the preview table, and clicking Deploy Selected on 1-2 rows.
