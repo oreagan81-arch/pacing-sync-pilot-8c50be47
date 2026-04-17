@@ -8,13 +8,14 @@ import { Globe, Rocket, Eye, Code, ExternalLink, Copy, CheckCircle2, AlertTriang
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useConfig } from '@/lib/config';
-import { generateCanvasPageHtml, type CanvasPageRow } from '@/lib/canvas-html';
+import { generateCanvasPageHtml, generateHomeroomPageHtml, type CanvasPageRow } from '@/lib/canvas-html';
+import type { ContentMapEntry } from '@/lib/auto-link';
 import { callEdge } from '@/lib/edge';
 import { useRealtimeDeploy } from '@/hooks/use-realtime-deploy';
 import { useSystemStore } from '@/store/useSystemStore';
 import SafetyDiffModal from '@/components/SafetyDiffModal';
 
-const PAGE_SUBJECTS = ['Math', 'Reading', 'Language Arts', 'History', 'Science'] as const;
+const PAGE_SUBJECTS = ['Math', 'Reading', 'Language Arts', 'History', 'Science', 'Homeroom'] as const;
 const DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
 interface WeekOption {
@@ -38,6 +39,8 @@ export default function PageBuilderPage() {
   const [selectedWeekId, setSelectedWeekId] = useState<string>('');
   const [selectedWeek, setSelectedWeek] = useState<WeekOption | null>(null);
   const [savedRows, setSavedRows] = useState<CanvasPageRow[]>([]);
+  const [contentMap, setContentMap] = useState<ContentMapEntry[]>([]);
+  const [latestNewsletter, setLatestNewsletter] = useState<{ homeroom_notes: string | null; birthdays: string | null } | null>(null);
   const [activeSubject, setActiveSubject] = useState<string>('Math');
   const [previewMode, setPreviewMode] = useState<'preview' | 'code'>('preview');
   const [deploying, setDeploying] = useState<Record<string, boolean>>({});
@@ -60,6 +63,16 @@ export default function PageBuilderPage() {
     supabase.from('weeks').select('*').order('quarter').order('week_num').then(({ data }) => {
       if (data) setWeeks(data);
     });
+    supabase.from('content_map').select('lesson_ref, subject, canvas_url, canonical_name').then(({ data }) => {
+      if (data) setContentMap(data as ContentMapEntry[]);
+    });
+    supabase
+      .from('newsletters')
+      .select('homeroom_notes, birthdays')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => setLatestNewsletter(data ?? null));
   }, []);
 
   useEffect(() => {
@@ -145,8 +158,28 @@ export default function PageBuilderPage() {
 
   // Generate HTML for active subject
   const generatedHtml = useMemo(() => {
-    if (!selectedWeek || subjectRows.length === 0 || !config) return '';
+    if (!selectedWeek || !config) return '';
     const quarterColor = config.quarterColors[selectedWeek.quarter] || '#0065a7';
+
+    if (activeSubject === 'Homeroom') {
+      // Collect upcoming tests across all subjects this week
+      const tests = rows
+        .filter((r) => r.type === 'Test' || (r.in_class || '').toLowerCase().includes('test'))
+        .map((r) => `${r.day}: ${r.subject}${r.lesson_num ? ` \u2014 ${r.lesson_num}` : ''}`);
+      return generateHomeroomPageHtml({
+        weekNum: selectedWeek.week_num,
+        quarter: selectedWeek.quarter,
+        dateRange: selectedWeek.date_range || '',
+        quarterColor,
+        reminders: selectedWeek.reminders || '',
+        resources: selectedWeek.resources || '',
+        homeroomNotes: latestNewsletter?.homeroom_notes || '',
+        birthdays: latestNewsletter?.birthdays || '',
+        upcomingTests: tests,
+      });
+    }
+
+    if (subjectRows.length === 0) return '';
     return generateCanvasPageHtml({
       subject: activeSubject === 'Reading' ? 'Reading & Spelling' : activeSubject,
       rows: subjectRows,
@@ -156,8 +189,9 @@ export default function PageBuilderPage() {
       reminders: selectedWeek.reminders || '',
       resources: selectedWeek.resources || '',
       quarterColor,
+      contentMap,
     });
-  }, [subjectRows, selectedWeek, activeSubject, config]);
+  }, [subjectRows, rows, selectedWeek, activeSubject, config, contentMap, latestNewsletter]);
 
   // Canvas page naming: Q4W2, Q3W5, etc.
   const getPageSlug = (quarter: string, weekNum: number) => {
@@ -176,26 +210,45 @@ export default function PageBuilderPage() {
   // Deploy single subject page via canvas-deploy-page edge function
   const handleDeploy = async (subject: string) => {
     if (!selectedWeek || !config) return;
-    const sRows = subject === 'Reading'
-      ? rows.filter((r) => r.subject === 'Reading' || r.subject === 'Spelling')
-      : rows.filter((r) => r.subject === subject);
 
-    if (sRows.length === 0) {
-      toast.error(`No data for ${subject}`);
-      return;
-    }
+    let sRows: CanvasPageRow[] = [];
+    let html = '';
+    let courseId: number | undefined;
+    const quarterColor = config.quarterColors[selectedWeek.quarter] || '#0065a7';
+    const pageSlug = getPageSlug(selectedWeek.quarter, selectedWeek.week_num);
+    const pageTitle = getPageTitle(selectedWeek.quarter, selectedWeek.week_num);
 
-    setDeploying((p) => ({ ...p, [subject]: true }));
+    if (subject === 'Homeroom') {
+      courseId = config.courseIds['Homeroom'];
+      const tests = rows
+        .filter((r) => r.type === 'Test' || (r.in_class || '').toLowerCase().includes('test'))
+        .map((r) => `${r.day}: ${r.subject}${r.lesson_num ? ` \u2014 ${r.lesson_num}` : ''}`);
+      html = generateHomeroomPageHtml({
+        weekNum: selectedWeek.week_num,
+        quarter: selectedWeek.quarter,
+        dateRange: selectedWeek.date_range || '',
+        quarterColor,
+        reminders: selectedWeek.reminders || '',
+        resources: selectedWeek.resources || '',
+        homeroomNotes: latestNewsletter?.homeroom_notes || '',
+        birthdays: latestNewsletter?.birthdays || '',
+        upcomingTests: tests,
+      });
+    } else {
+      sRows = subject === 'Reading'
+        ? rows.filter((r) => r.subject === 'Reading' || r.subject === 'Spelling')
+        : rows.filter((r) => r.subject === subject);
 
-    try {
-      const courseId = subject === 'Reading'
+      if (sRows.length === 0) {
+        toast.error(`No data for ${subject}`);
+        return;
+      }
+
+      courseId = subject === 'Reading'
         ? (config.autoLogic.togetherLogicCourseId || config.courseIds['Reading'])
         : config.courseIds[subject];
-      const pageSlug = getPageSlug(selectedWeek.quarter, selectedWeek.week_num);
-      const pageTitle = getPageTitle(selectedWeek.quarter, selectedWeek.week_num);
-      const quarterColor = config.quarterColors[selectedWeek.quarter] || '#0065a7';
 
-      const html = generateCanvasPageHtml({
+      html = generateCanvasPageHtml({
         subject: subject === 'Reading' ? 'Reading & Spelling' : subject,
         rows: sRows,
         quarter: selectedWeek.quarter,
@@ -204,8 +257,18 @@ export default function PageBuilderPage() {
         reminders: selectedWeek.reminders || '',
         resources: selectedWeek.resources || '',
         quarterColor,
+        contentMap,
       });
+    }
 
+    if (!courseId) {
+      toast.error(`No course ID configured for ${subject}`);
+      return;
+    }
+
+    setDeploying((p) => ({ ...p, [subject]: true }));
+
+    try {
       const result = await callEdge<{ status?: string; canvasUrl?: string; error?: string }>('canvas-deploy-page', {
         subject,
         courseId,
@@ -219,7 +282,7 @@ export default function PageBuilderPage() {
 
       if (result.status === 'DEPLOYED' || result.status === 'NO_CHANGE') {
         setDeployStatuses((p) => ({ ...p, [subject]: { status: result.status!, canvasUrl: result.canvasUrl } }));
-        toast.success(`${subject} agenda deployed & set as homepage!`, {
+        toast.success(`${subject} agenda ${result.status === 'NO_CHANGE' ? 'up to date' : 'deployed & set as homepage'}`, {
           action: result.canvasUrl ? { label: 'Open', onClick: () => window.open(result.canvasUrl, '_blank') } : undefined,
         });
       } else {
@@ -234,6 +297,7 @@ export default function PageBuilderPage() {
 
   const deployableSubjects = useMemo(() => {
     return PAGE_SUBJECTS.filter((s) => {
+      if (s === 'Homeroom') return true; // always deployable (banner + reminders are enough)
       const sRows = s === 'Reading'
         ? rows.filter((r) => r.subject === 'Reading' || r.subject === 'Spelling')
         : rows.filter((r) => r.subject === s);
@@ -472,12 +536,17 @@ export default function PageBuilderPage() {
                 ) : previewMode === 'preview' ? (
                   <div>
                     <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider font-semibold">
-                      Exact HTML being deployed
+                      Mobile preview \u2014 sandboxed exact HTML being deployed
                     </p>
-                    <div dangerouslySetInnerHTML={{ __html: generatedHtml }} />
+                    <iframe
+                      title="Canvas page preview"
+                      sandbox=""
+                      srcDoc={`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>body{font-family:'Helvetica Neue',Arial,sans-serif;margin:0;padding:16px;background:#fff;color:#222;line-height:1.5}h2,h3,h4{margin:0}h3{padding:10px 16px;border-radius:4px 4px 0 0;font-size:18px}h2{padding:14px;border-radius:4px;font-size:22px}.kl_subtitle{text-align:center;color:#666;font-style:italic;margin:8px 0 16px}.kl_wrapper>div{margin-bottom:18px;border:1px solid #e3e3e3;border-radius:6px;overflow:hidden}.kl_wrapper>div>*:not(h2):not(h3){padding-left:16px;padding-right:16px}p{margin:8px 0}a{color:#0065a7}img{max-width:100%;height:auto}</style></head><body>${generatedHtml}</body></html>`}
+                      style={{ width: '100%', minHeight: '600px', border: '1px solid hsl(var(--border))', borderRadius: '6px', background: '#fff' }}
+                    />
                   </div>
                 ) : (
-                  <pre className="text-xs bg-slate-950 text-slate-100 p-4 rounded-lg overflow-auto max-h-[600px] whitespace-pre-wrap font-mono">
+                  <pre className="text-xs bg-muted text-foreground p-4 rounded-lg overflow-auto max-h-[600px] whitespace-pre-wrap font-mono">
                     {generatedHtml}
                   </pre>
                 )}
