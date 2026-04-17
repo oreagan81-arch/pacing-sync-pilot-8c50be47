@@ -568,8 +568,8 @@ export default function PacingEntryPage({
                           {!hideAssign && (
                             <div className="flex items-center gap-2">
                               <Checkbox
-                                checked={isFriday && !isTest ? false : cell.create_assign}
-                                disabled={isFriday && !isTest}
+                                checked={(isFriday && !isTest) || isLABlocked ? false : cell.create_assign}
+                                disabled={(isFriday && !isTest) || isLABlocked}
                                 onCheckedChange={(v) =>
                                   updateCell(subject, day, 'create_assign', !!v)
                                 }
@@ -578,9 +578,20 @@ export default function PacingEntryPage({
                               <label
                                 htmlFor={`assign-${subject}-${day}`}
                                 className="text-[10px] text-muted-foreground"
-                                title={isFriday && !isTest ? 'Friday — assignments disabled (Tests OK)' : undefined}
+                                title={
+                                  isLABlocked
+                                    ? 'LA — only CP and Test create assignments'
+                                    : isFriday && !isTest
+                                    ? 'Friday — assignments disabled (Tests OK)'
+                                    : undefined
+                                }
                               >
-                                Create Assign{isFriday && !isTest ? ' (Friday locked)' : ''}
+                                Create Assign
+                                {isLABlocked
+                                  ? ' (CP/Test only)'
+                                  : isFriday && !isTest
+                                  ? ' (Friday locked)'
+                                  : ''}
                               </label>
                             </div>
                           )}
@@ -603,6 +614,11 @@ export default function PacingEntryPage({
                               </Badge>
                             )}
                             {hideAssign && cell.type && cell.type !== '-' && cell.type !== 'No Class' && (
+                              <Badge variant="secondary" className="text-[9px]">
+                                No Assignment
+                              </Badge>
+                            )}
+                            {isLABlocked && cell.type && cell.type !== '-' && cell.type !== 'No Class' && (
                               <Badge variant="secondary" className="text-[9px]">
                                 No Assignment
                               </Badge>
