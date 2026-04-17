@@ -12,25 +12,49 @@ async function resolveGroupId(
   headers: HeadersInit,
   groupName: string
 ): Promise<number | null> {
-  const res = await fetch(`${courseBase}/assignment_groups`, { headers });
+  const res = await fetchWithRetry(`${courseBase}/assignment_groups`, { headers });
   if (!res.ok) { await res.text(); return null; }
   const groups = await res.json();
   const match = groups.find((g: { name: string }) => g.name === groupName);
   return match ? match.id : null;
 }
 
-// Convert date string to 23:59 ET (DST-aware via America/New_York)
+// DST-aware ET → UTC conversion. dateStr = YYYY-MM-DD; sets due to 23:59 America/New_York.
 function toDueAt(dateStr: string): string {
-  // dateStr expected as YYYY-MM-DD
-  // Create date at 23:59 Eastern
-  const d = new Date(`${dateStr}T23:59:00`);
-  // For DST: offset is -4 (EDT) or -5 (EST)
-  // We'll use a fixed approach: set UTC time as 23:59 + 5h = 04:59 next day (EST)
-  // This is approximate; for true DST awareness we'd need a tz lib
-  const utc = new Date(`${dateStr}T04:59:00.000Z`); // 23:59 EST = 04:59 UTC next day
-  // Adjust: add 1 day since 04:59 is next day
-  utc.setUTCDate(utc.getUTCDate() + 1);
-  return utc.toISOString();
+  // Determine offset for that date in America/New_York via shortOffset (e.g. "GMT-4" / "GMT-5")
+  const probe = new Date(`${dateStr}T12:00:00Z`);
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    timeZoneName: 'shortOffset',
+  });
+  const parts = fmt.formatToParts(probe);
+  const tzPart = parts.find((p) => p.type === 'timeZoneName')?.value || 'GMT-5';
+  const match = tzPart.match(/GMT([+-])(\d{1,2})/);
+  const sign = match?.[1] === '+' ? '+' : '-';
+  const hours = match?.[2]?.padStart(2, '0') || '05';
+  const offset = `${sign}${hours}:00`;
+  const local = new Date(`${dateStr}T23:59:00${offset}`);
+  return local.toISOString();
+}
+
+async function fetchWithRetry(url: string, init: RequestInit, attempts = 3): Promise<Response> {
+  let lastErr: Error | null = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(url, init);
+      if (res.status >= 500 || res.status === 429) {
+        if (i < attempts - 1) {
+          await new Promise((r) => setTimeout(r, 400 * Math.pow(2, i)));
+          continue;
+        }
+      }
+      return res;
+    } catch (e) {
+      lastErr = e as Error;
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 400 * Math.pow(2, i)));
+    }
+  }
+  throw lastErr ?? new Error('fetchWithRetry exhausted');
 }
 
 Deno.serve(async (req) => {
@@ -42,7 +66,7 @@ Deno.serve(async (req) => {
     const {
       subject, courseId, title, description, points, gradingType,
       assignmentGroup, dueDate, existingId, rowId, weekId,
-      omitFromFinal
+      omitFromFinal, contentHash,
     } = await req.json();
 
     if (!courseId || !title) {
@@ -55,7 +79,7 @@ Deno.serve(async (req) => {
     const canvasToken = Deno.env.get("CANVAS_API_TOKEN");
     let canvasBase = Deno.env.get("CANVAS_BASE_URL") || "https://thalesacademy.instructure.com";
     if (!canvasBase.startsWith("http")) canvasBase = `https://${canvasBase}`;
-    canvasBase = canvasBase.replace(/\/+$/, ""); // strip trailing slashes
+    canvasBase = canvasBase.replace(/\/+$/, "");
     if (!canvasToken) {
       return new Response(JSON.stringify({ error: "CANVAS_API_TOKEN not configured" }), {
         status: 500,
@@ -67,6 +91,34 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const sb = createClient(supabaseUrl, supabaseKey);
 
+    // ========= NO_CHANGE skip via content_hash =========
+    if (rowId && contentHash) {
+      const { data: existingRow } = await sb
+        .from("pacing_rows")
+        .select("content_hash, canvas_assignment_id, canvas_url")
+        .eq("id", rowId)
+        .maybeSingle();
+      if (
+        existingRow &&
+        existingRow.content_hash === contentHash &&
+        existingRow.canvas_assignment_id
+      ) {
+        await sb.from("deploy_log").insert({
+          week_id: weekId || null,
+          subject: subject || null,
+          action: "assignment_deploy",
+          status: "NO_CHANGE",
+          canvas_url: existingRow.canvas_url,
+          message: `Skipped (no change): ${title}`,
+        });
+        return new Response(JSON.stringify({
+          status: "NO_CHANGE",
+          assignmentId: existingRow.canvas_assignment_id,
+          canvasUrl: existingRow.canvas_url,
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
+
     const canvasHeaders = {
       Authorization: `Bearer ${canvasToken}`,
       "Content-Type": "application/json",
@@ -74,7 +126,6 @@ Deno.serve(async (req) => {
 
     const courseBase = `${canvasBase}/api/v1/courses/${courseId}`;
 
-    // Resolve assignment group
     let groupId: number | null = null;
     if (assignmentGroup) {
       groupId = await resolveGroupId(courseBase, canvasHeaders, assignmentGroup);
@@ -93,13 +144,23 @@ Deno.serve(async (req) => {
       },
     };
 
-    const isUpdate = !!existingId;
+    // Determine update vs create
+    let canvasAssignmentId = existingId;
+    if (!canvasAssignmentId && rowId) {
+      const { data: row } = await sb
+        .from("pacing_rows")
+        .select("canvas_assignment_id")
+        .eq("id", rowId)
+        .maybeSingle();
+      canvasAssignmentId = row?.canvas_assignment_id || null;
+    }
+    const isUpdate = !!canvasAssignmentId;
     const method = isUpdate ? "PUT" : "POST";
     const url = isUpdate
-      ? `${courseBase}/assignments/${existingId}`
+      ? `${courseBase}/assignments/${canvasAssignmentId}`
       : `${courseBase}/assignments`;
 
-    const res = await fetch(url, {
+    const res = await fetchWithRetry(url, {
       method,
       headers: canvasHeaders,
       body: JSON.stringify(payload),
@@ -107,7 +168,6 @@ Deno.serve(async (req) => {
 
     if (!res.ok) {
       const errText = await res.text();
-      // Log error
       await sb.from("deploy_log").insert({
         week_id: weekId || null,
         subject: subject || null,
@@ -116,12 +176,14 @@ Deno.serve(async (req) => {
         message: `${method} ${res.status}: ${errText}`,
         payload: payload,
       });
-
-      // Update pacing row status
+      await sb.from("deploy_notifications").insert({
+        level: "error",
+        title: `Assignment deploy failed: ${subject || ''}`,
+        message: `${title} — ${res.status}`,
+      });
       if (rowId) {
         await sb.from("pacing_rows").update({ deploy_status: "ERROR" }).eq("id", rowId);
       }
-
       return new Response(JSON.stringify({ error: errText, status: "ERROR" }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -132,17 +194,16 @@ Deno.serve(async (req) => {
     const assignmentId = String(result.id);
     const canvasUrl = `${canvasBase}/courses/${courseId}/assignments/${assignmentId}`;
 
-    // Update pacing_rows
     if (rowId) {
       await sb.from("pacing_rows").update({
         canvas_assignment_id: assignmentId,
         canvas_url: canvasUrl,
         deploy_status: "DEPLOYED",
         last_deployed: new Date().toISOString(),
+        ...(contentHash ? { content_hash: contentHash } : {}),
       }).eq("id", rowId);
     }
 
-    // Log success
     await sb.from("deploy_log").insert({
       week_id: weekId || null,
       subject: subject || null,
@@ -150,6 +211,12 @@ Deno.serve(async (req) => {
       status: "DEPLOYED",
       canvas_url: canvasUrl,
       message: `${isUpdate ? "Updated" : "Created"} assignment: ${title}`,
+    });
+    await sb.from("deploy_notifications").insert({
+      level: "success",
+      title: `Assignment ${isUpdate ? "updated" : "deployed"}: ${subject || ''}`,
+      message: title,
+      entity_ref: canvasUrl,
     });
 
     return new Response(JSON.stringify({
