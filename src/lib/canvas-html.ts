@@ -93,6 +93,41 @@ const DIVIDER_STYLE = (color: string) =>
 const DAY_HEADER_STYLE = (color: string) =>
   `background-color: ${color}; color: #ffffff; border-color: ${color};`;
 
+// Darken a hex color by a given percent (0-100). Used for banner gradients.
+function darkenHex(hex: string, pct: number): string {
+  const h = hex.replace('#', '');
+  const num = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16);
+  const amt = Math.round(2.55 * pct);
+  const r = Math.max(0, ((num >> 16) & 0xff) - amt);
+  const g = Math.max(0, ((num >> 8) & 0xff) - amt);
+  const b = Math.max(0, (num & 0xff) - amt);
+  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
+}
+
+// Banner inline style: solid fallback first (for older RCEs), then gradient layered via background shorthand.
+const BANNER_BG_STYLE = (color: string) =>
+  `color: #ffffff; background-color: ${color}; background: linear-gradient(135deg, ${color} 0%, ${darkenHex(color, 15)} 100%); text-align: center;`;
+
+function formatLastUpdated(): string {
+  const d = new Date();
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// Resource line → <a> or text. Supports "Label | URL" pipe syntax.
+function renderResourceLine(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  const pipe = trimmed.split('|').map((s) => s.trim());
+  if (pipe.length === 2 && pipe[1].startsWith('http')) {
+    return `        <p style="line-height: 1.5;"><a href="${pipe[1]}" target="_blank">${pipe[0]}</a></p>`;
+  }
+  if (trimmed.startsWith('http')) {
+    const label = trimmed.split('/').pop() || 'Resource';
+    return `        <p style="line-height: 1.5;"><a href="${trimmed}" target="_blank">${label}</a></p>`;
+  }
+  return `        <p style="line-height: 1.5;">${trimmed}</p>`;
+}
+
 export function generateCanvasPageHtml(params: CanvasPageParams): string {
   const { subject, rows, quarter, weekNum, dateRange, reminders, resources, quarterColor, contentMap = [] } = params;
   const parts: string[] = [];
@@ -100,8 +135,9 @@ export function generateCanvasPageHtml(params: CanvasPageParams): string {
   // 1. BANNER
   parts.push(`<div id="kl_wrapper_3" class="kl_circle_left kl_wrapper" style="border-style: none;">
     <div id="kl_banner" class="">
-        <h2 class="" style="color: #ffffff; background-color: ${quarterColor}; text-align: center;"><span id="kl_banner_right" class="" style="color: #ffffff; background-color: ${quarterColor};">${subject} \u2014 Weekly Agenda</span></h2>
+        <h2 class="" style="${BANNER_BG_STYLE(quarterColor)}"><span id="kl_banner_right" class="" style="color: #ffffff; background-color: ${quarterColor};">${subject} \u2014 Weekly Agenda</span></h2>
         <p class="kl_subtitle">${quarter}, Week ${weekNum} | ${dateRange}</p>
+        <p class="kl_subtitle" style="color: #888888; font-size: 0.85em; margin-top: -4px;"><em>Last updated: ${formatLastUpdated()}</em></p>
     </div>`);
 
   // 2. REMINDERS (omit if empty)
@@ -134,13 +170,7 @@ ${items}
   }
 
   if (allResources.length > 0) {
-    const items = allResources.map((trimmed) => {
-      if (trimmed.startsWith('http')) {
-        const label = trimmed.split('/').pop() || 'Resource';
-        return `        <p style="line-height: 1.5;"><a href="${trimmed}" target="_blank">${label}</a></p>`;
-      }
-      return `        <p style="line-height: 1.5;">${trimmed}</p>`;
-    }).join('\n');
+    const items = allResources.map(renderResourceLine).filter(Boolean).join('\n');
     parts.push(`    <div id="kl_custom_block_5" class="">
         <h3 style="background-color: #00c0a5; color: #ffffff; border-color: #00c0a5;"><i class="fas fa-question" aria-hidden="true"><span class="dp-icon-content" style="display: none;">&nbsp;</span></i>Resources</h3>
 ${items}
@@ -167,16 +197,25 @@ ${items}
       continue;
     }
 
-    // Build In Class content with auto-linked refs and assignment hyperlink
-    let brevityText = applyBrevity(row.subject, row.lesson_num, row.in_class || '');
-    brevityText = injectFileLinks(brevityText, contentMap, row.subject);
-    brevityText = injectAssignmentLink(brevityText, row.canvas_url);
+    // Build In Class content with auto-linked refs and assignment hyperlink.
+    // Empty in_class → muted "Lesson plan TBD" placeholder so the page never has a blank paragraph.
+    const rawInClass = (row.in_class || '').trim();
+    let brevityText: string;
+    if (!rawInClass) {
+      brevityText = '<em style="color: #888;">Lesson plan TBD</em>';
+    } else {
+      brevityText = applyBrevity(row.subject, row.lesson_num, rawInClass);
+      brevityText = injectFileLinks(brevityText, contentMap, row.subject);
+      brevityText = injectAssignmentLink(brevityText, row.canvas_url);
+    }
 
     // For multiple subjects on the same day (Reading tab merges Reading + Spelling)
     const extraRows = dayRows.slice(1);
     const extraInClass = extraRows
       .map((r) => {
-        let t = applyBrevity(r.subject, r.lesson_num, r.in_class || '');
+        const raw = (r.in_class || '').trim();
+        if (!raw) return `        <p style="line-height: 1.5;"><em style="color: #888;">Lesson plan TBD</em></p>`;
+        let t = applyBrevity(r.subject, r.lesson_num, raw);
         t = injectFileLinks(t, contentMap, r.subject);
         t = injectAssignmentLink(t, r.canvas_url);
         return `        <p style="line-height: 1.5;">${t}</p>`;
@@ -249,8 +288,9 @@ export function generateHomeroomPageHtml(params: HomeroomPageParams): string {
 
   parts.push(`<div id="kl_wrapper_3" class="kl_circle_left kl_wrapper" style="border-style: none;">
     <div id="kl_banner" class="">
-        <h2 class="" style="color: #ffffff; background-color: ${quarterColor}; text-align: center;"><span id="kl_banner_right" class="" style="color: #ffffff; background-color: ${quarterColor};">Homeroom \u2014 Weekly Update</span></h2>
+        <h2 class="" style="${BANNER_BG_STYLE(quarterColor)}"><span id="kl_banner_right" class="" style="color: #ffffff; background-color: ${quarterColor};">Homeroom \u2014 Weekly Update</span></h2>
         <p class="kl_subtitle">${quarter}, Week ${weekNum} | ${dateRange}</p>
+        <p class="kl_subtitle" style="color: #888888; font-size: 0.85em; margin-top: -4px;"><em>Last updated: ${formatLastUpdated()}</em></p>
     </div>`);
 
   // Notes from teacher
@@ -300,14 +340,7 @@ ${items}
 
   // Resources
   if (resources && resources.trim()) {
-    const items = resources.split('\n').filter(Boolean).map((r) => {
-      const trimmed = r.trim();
-      if (trimmed.startsWith('http')) {
-        const label = trimmed.split('/').pop() || 'Resource';
-        return `        <p style="line-height: 1.5;"><a href="${trimmed}" target="_blank">${label}</a></p>`;
-      }
-      return `        <p style="line-height: 1.5;">${trimmed}</p>`;
-    }).join('\n');
+    const items = resources.split('\n').filter(Boolean).map(renderResourceLine).filter(Boolean).join('\n');
     parts.push(`    <div id="kl_custom_block_5" class="">
         <h3 style="background-color: #00c0a5; color: #ffffff; border-color: #00c0a5;"><i class="fas fa-question" aria-hidden="true"><span class="dp-icon-content" style="display: none;">&nbsp;</span></i>Resources</h3>
 ${items}

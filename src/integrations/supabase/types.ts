@@ -561,6 +561,7 @@ export type Database = {
           created_at: string | null
           date_range: string | null
           id: string
+          page_hashes: Json
           quarter: string
           reminders: string | null
           resources: string | null
@@ -572,6 +573,7 @@ export type Database = {
           created_at?: string | null
           date_range?: string | null
           id?: string
+          page_hashes?: Json
           quarter: string
           reminders?: string | null
           resources?: string | null
@@ -583,6 +585,7 @@ export type Database = {
           created_at?: string | null
           date_range?: string | null
           id?: string
+          page_hashes?: Json
           quarter?: string
           reminders?: string | null
           resources?: string | null
