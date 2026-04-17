@@ -1,34 +1,51 @@
 
-This is a system identity / context-setting prompt — Prompt 1 of the Ultimate Pack. No code changes required. The user is establishing rules for all subsequent prompts.
+The user wants course IDs hardcoded. They're already in `system_config.course_ids` (loaded via `loadConfig()`). The user is asking me to ensure these exact values are the source of truth.
 
-I should acknowledge the operating constraints and confirm alignment with the existing codebase, then wait for the next prompt.
+Best approach: add a constant module `src/lib/course-ids.ts` as the canonical hardcoded fallback, AND update the `system_config` row in DB so both layers agree. This way the runtime config remains overridable but the hardcoded constants act as the safety net per Prompt 1's "no Canvas IDs drift" rule.
 
-Key constraints to internalize:
-- Existing production system, no rebuilds
-- React + Supabase + Canvas + Lovable stack ✅ matches
-- Single user (Owen Reagan, Grade 4, Thales) ✅ matches memory
-- Canvas API only through Edge Functions ✅ already the pattern (`canvas-deploy-page`, `canvas-deploy-assignment`, `canvas-post-announcement`, etc.)
-- No tokens in frontend ✅ `CANVAS_API_TOKEN` already secret-only
+Let me check current state quickly via plan rather than reads — I already have `useSystemStore` and `config.ts` in context. The Spelling→Reading routing is already handled in `assignment-build.ts` via `togetherLogicCourseId`.
 
-## Plan: Acknowledge & Lock In Operating Rules
+## Plan: Hardcode Canonical Course IDs
 
-No files to edit. This prompt sets the contract for the next prompts in the pack.
+### 1. New `src/lib/course-ids.ts` — single source of truth
+```ts
+export const COURSE_IDS = {
+  Math: 21957,
+  Reading: 21919,
+  Spelling: 21919,        // Together Logic — shares Reading course
+  'Language Arts': 21944,
+  History: 21934,
+  Science: 21970,
+  Homeroom: 22254,
+} as const;
 
-### Confirmed alignment with existing codebase
-- Stack matches: React 18 + Vite + Supabase + Canvas API + Lovable Cloud
-- Single-user mode: anonymous Supabase auth, permissive RLS
-- Canvas calls already routed through edge functions: `canvas-deploy-page`, `canvas-deploy-assignment`, `canvas-post-announcement`, `canvas-deployer`, `friday-publish`
-- `CANVAS_API_TOKEN` and `CANVAS_BASE_URL` live as Supabase secrets — never bundled to frontend
-- Memory file `mem://architecture/system-logic-engine` already encodes "Thin Client React → GAS → Supabase proxy" pattern
+export const TOGETHER_LOGIC_COURSE_ID = 21919;
 
-### Operating rules I'll follow for the rest of the pack
-1. Extend, never rebuild — audit before writing
-2. All Canvas mutations go through edge functions
-3. No Canvas tokens, secrets, or service-role keys in frontend code
-4. Single-user assumptions: no multi-tenant, no per-user RLS gymnastics
-5. Reuse existing helpers (`canvas-html.ts`, `assignment-build.ts`, `auto-link.ts`, `risk-engine.ts`, `useSystemStore`)
-6. Reuse existing tables — schema is now complete (14 tables incl. memory/automation/health)
-7. Persist learning to `teacher_memory` / `teacher_patterns` when prompts introduce learned behavior
+export function getCourseId(subject: string): number | null {
+  return COURSE_IDS[subject as keyof typeof COURSE_IDS] ?? null;
+}
+```
 
-### Ready for Prompt 2
-Awaiting the next prompt in the pack. No action needed on this one beyond acknowledgment.
+### 2. Update `src/lib/config.ts`
+- After `loadConfig()` returns, merge `COURSE_IDS` over `data.course_ids` so hardcoded values always win
+- Same for `autoLogic.togetherLogicCourseId` → force to `21919`
+
+### 3. Update `src/lib/assignment-build.ts`
+- `resolveCourseId()` → use `getCourseId()` from the new module instead of `config.courseIds[subject]`
+- Spelling continues to route via Together Logic (already handled, just point to constant)
+
+### 4. DB sync migration
+- Update `system_config` row `course_ids` JSONB to the exact hardcoded values so any other consumer (edge functions reading the config row) sees the same truth
+- Update `auto_logic.togetherLogicCourseId` = 21919
+
+### 5. Update `mem://integrations/canvas/routing-logic`
+- Refresh the memory file with the exact 6 IDs so future sessions don't drift
+
+### Why both code constant AND DB
+- Code constant = compile-time safety, no runtime config can break Canvas routing
+- DB row = edge functions and admin UI still see consistent values
+- If they ever diverge, code wins (merge order)
+
+### Out of scope
+- Per-quarter course rotation (not requested)
+- Editing `SettingsPage.tsx` UI for course IDs (kept read-only, since hardcoded)
