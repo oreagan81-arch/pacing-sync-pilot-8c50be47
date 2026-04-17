@@ -54,11 +54,9 @@ export async function hashAssignment(parts: {
 /**
  * Route subject → Canvas course id, applying Reading+Spelling Together Logic.
  */
-export function resolveCourseId(subject: string, config: AppConfig): number | null {
-  if (subject === 'Spelling') {
-    return config.autoLogic?.togetherLogicCourseId ?? config.courseIds['Reading'] ?? null;
-  }
-  return config.courseIds[subject] ?? null;
+export function resolveCourseId(subject: string, _config: AppConfig): number | null {
+  // Hardcoded canonical IDs — Spelling routes to Reading via Together Logic
+  return getCourseId(subject);
 }
 
 function buildDescription(
