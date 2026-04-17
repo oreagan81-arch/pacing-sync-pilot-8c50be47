@@ -455,10 +455,19 @@ export default function AssignmentsPage() {
                             <TableCell className="text-xs font-medium text-primary">{row.day}</TableCell>
                             <TableCell className="text-xs">
                               <div className="flex flex-col gap-0.5">
-                                <span className="font-semibold">{row.title}</span>
+                                <span className="font-semibold flex items-center gap-1.5">
+                                  {row.title}
+                                  {row.isSynthetic && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[8px] h-4 px-1 bg-primary/10 text-primary border-primary/30"
+                                    >
+                                      AUTO
+                                    </Badge>
+                                  )}
+                                </span>
                                 <span className="text-[9px] text-muted-foreground">
                                   {row.subject} · Course {row.courseId}
-                                  {row.isSynthetic && <span className="ml-1 text-primary/70">· auto</span>}
                                 </span>
                               </div>
                             </TableCell>
