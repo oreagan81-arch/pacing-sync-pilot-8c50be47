@@ -26,6 +26,7 @@ import SafetyDiffModal from '@/components/SafetyDiffModal';
 import { useRealtimeDeploy } from '@/hooks/use-realtime-deploy';
 import {
   buildAssignmentForCell,
+  expandMathRow,
   formatDueET,
   type BuiltAssignment,
 } from '@/lib/assignment-build';
@@ -156,22 +157,10 @@ export default function AssignmentsPage() {
           if (subject === 'Spelling' && !cell.isTest) continue;
           if (cell.isNoClass || !cell.value || cell.value === '-') continue;
 
-          // Math triple sequence on test days
-          if (subject === 'Math' && cell.isTest) {
-            const test = await buildAssignmentForCell(subject, dayIdx, cell, {
-              config, contentMap, weekDates,
-            }, { type: 'Test' });
-            const fact = await buildAssignmentForCell(subject, dayIdx, cell, {
-              config, contentMap, weekDates,
-            }, { type: 'Fact Test', isSynthetic: true });
-            if (test) built.push(toPreview(test));
-            if (fact) built.push(toPreview(fact));
-            if (dayIdx > 0) {
-              const sg = await buildAssignmentForCell(subject, dayIdx - 1, cell, {
-                config, contentMap, weekDates,
-              }, { type: 'Study Guide', isSynthetic: true });
-              if (sg) built.push(toPreview(sg));
-            }
+          // Math Triple Logic: Test → 3 items (Written + Fact + Study Guide -1 day)
+          if (subject === 'Math') {
+            const items = await expandMathRow(dayIdx, cell, { config, contentMap, weekDates });
+            for (const a of items) built.push(toPreview(a));
             continue;
           }
 
