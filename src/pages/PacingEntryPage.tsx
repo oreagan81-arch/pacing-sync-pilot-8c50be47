@@ -452,6 +452,34 @@ export default function PacingEntryPage({
         </div>
       </div>
 
+      {/* Active H/S subject toggle */}
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card/50 px-4 py-3">
+        <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Active H/S Subject
+        </label>
+        <div className="flex gap-1">
+          {(['Both', 'History', 'Science'] as const).map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => setActiveHsSubject(opt)}
+              className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+                activeHsSubject === opt
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
+              }`}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+        {activeHsSubject !== 'Both' && (
+          <span className="text-xs text-muted-foreground">
+            The {activeHsSubject === 'History' ? 'Science' : 'History'} Canvas page will show a redirect to {activeHsSubject}.
+          </span>
+        )}
+      </div>
+
       {/* Subject accordion sections */}
       <Accordion type="multiple" defaultValue={SUBJECTS.map(String)}>
         {SUBJECTS.map((subject) => {
