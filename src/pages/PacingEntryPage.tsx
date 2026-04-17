@@ -166,6 +166,8 @@ export default function PacingEntryPage({
           const isNoAssign =
             config?.autoLogic.historyScienceNoAssign && (subj === 'History' || subj === 'Science');
           const isFriday = day === 'Friday';
+          const isLA = subj === 'Language Arts';
+          const laBlocked = isLA && !isLanguageArtsAssignable(d.type);
           return {
             week_id: weekRow.id,
             subject: subj,
@@ -175,7 +177,7 @@ export default function PacingEntryPage({
             in_class: d.in_class || null,
             at_home: isFriday ? null : d.at_home || null,
             resources: d.resources || null,
-            create_assign: isNoAssign || isFriday ? false : d.create_assign,
+            create_assign: isNoAssign || isFriday || laBlocked ? false : d.create_assign,
           };
         })
       );
