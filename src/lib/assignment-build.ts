@@ -9,6 +9,7 @@ import type { AppConfig } from './config';
 import type { PacingCell } from '@/store/useSystemStore';
 import { generateAssignmentTitle, resolveAssignmentGroup } from './assignment-logic';
 import { injectFileLinks, type ContentMapEntry } from './auto-link';
+import { getCourseId } from './course-ids';
 
 export interface BuiltAssignment {
   rowKey: string;
