@@ -533,7 +533,11 @@ export default function PacingEntryPage({
                             rows={2}
                           />
 
-                          {!isFriday && (
+                          {isFriday ? (
+                            <div className="text-[10px] italic text-muted-foreground border-l-2 border-l-muted pl-2 py-1">
+                              Friday — no At Home content
+                            </div>
+                          ) : (
                             <Textarea
                               placeholder="At Home"
                               value={cell.at_home}
@@ -555,7 +559,8 @@ export default function PacingEntryPage({
                           {!hideAssign && (
                             <div className="flex items-center gap-2">
                               <Checkbox
-                                checked={cell.create_assign}
+                                checked={isFriday && !isTest ? false : cell.create_assign}
+                                disabled={isFriday && !isTest}
                                 onCheckedChange={(v) =>
                                   updateCell(subject, day, 'create_assign', !!v)
                                 }
@@ -564,8 +569,9 @@ export default function PacingEntryPage({
                               <label
                                 htmlFor={`assign-${subject}-${day}`}
                                 className="text-[10px] text-muted-foreground"
+                                title={isFriday && !isTest ? 'Friday — assignments disabled (Tests OK)' : undefined}
                               >
-                                Create Assign
+                                Create Assign{isFriday && !isTest ? ' (Friday locked)' : ''}
                               </label>
                             </div>
                           )}
