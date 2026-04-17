@@ -14,6 +14,10 @@ import { callEdge } from '@/lib/edge';
 import { useRealtimeDeploy } from '@/hooks/use-realtime-deploy';
 import { useSystemStore } from '@/store/useSystemStore';
 import SafetyDiffModal from '@/components/SafetyDiffModal';
+import {
+  filterTogetherPageRows,
+  resolveTogetherCourseId,
+} from '@/lib/together-logic';
 
 const PAGE_SUBJECTS = ['Math', 'Reading', 'Language Arts', 'History', 'Science', 'Homeroom'] as const;
 const DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -148,12 +152,9 @@ export default function PageBuilderPage() {
     return result;
   }, [pacingData, savedRows]);
 
-  // Get rows for active subject (Reading tab merges Reading + Spelling)
+  // Get rows for active subject (Reading tab merges Reading + Spelling via Together Logic)
   const subjectRows = useMemo(() => {
-    if (activeSubject === 'Reading') {
-      return rows.filter((r) => r.subject === 'Reading' || r.subject === 'Spelling');
-    }
-    return rows.filter((r) => r.subject === activeSubject);
+    return filterTogetherPageRows(rows, activeSubject);
   }, [rows, activeSubject]);
 
   // Generate HTML for active subject
@@ -235,18 +236,14 @@ export default function PageBuilderPage() {
         upcomingTests: tests,
       });
     } else {
-      sRows = subject === 'Reading'
-        ? rows.filter((r) => r.subject === 'Reading' || r.subject === 'Spelling')
-        : rows.filter((r) => r.subject === subject);
+      sRows = filterTogetherPageRows(rows, subject);
 
       if (sRows.length === 0) {
         toast.error(`No data for ${subject}`);
         return;
       }
 
-      courseId = subject === 'Reading'
-        ? (config.autoLogic.togetherLogicCourseId || config.courseIds['Reading'])
-        : config.courseIds[subject];
+      courseId = resolveTogetherCourseId(subject) ?? config.courseIds[subject];
 
       html = generateCanvasPageHtml({
         subject: subject === 'Reading' ? 'Reading & Spelling' : subject,
@@ -297,10 +294,8 @@ export default function PageBuilderPage() {
 
   const deployableSubjects = useMemo(() => {
     return PAGE_SUBJECTS.filter((s) => {
-      if (s === 'Homeroom') return true; // always deployable (banner + reminders are enough)
-      const sRows = s === 'Reading'
-        ? rows.filter((r) => r.subject === 'Reading' || r.subject === 'Spelling')
-        : rows.filter((r) => r.subject === s);
+      if (s === 'Homeroom') return true; // always deployable
+      const sRows = filterTogetherPageRows(rows, s);
       return sRows.length > 0;
     });
   }, [rows]);
