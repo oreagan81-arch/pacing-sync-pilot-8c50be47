@@ -1,60 +1,55 @@
 
 Audit:
-- `assignment-build.ts` already supports `options.type`, `options.titleOverride`, `options.dayOffset`, `options.isSynthetic` — perfect for triple-creating Test/Fact Test/Study Guide
-- `assignment-logic.ts` `generateAssignmentTitle` already produces "SM5: Test — Lesson N", "SM5: Fact Test N", "SM5: Study Guide — Lesson N", "SM5: Evens HW — Lesson N", "SM5: Odds HW — Lesson N" ✅
-- The Triple Logic expansion is NOT yet implemented in `AssignmentsPage.tsx` — current code likely calls `buildAssignmentForCell` once per row
-- `auto_logic.mathTestTriple` flag already true in DB
-- `auto_logic.mathEvenOdd` already true; titles already correct via existing logic
+- `assignment-logic.ts` already handles LA titles for `Test` ("ELA4A Shurley Test") and `CP` ("ELA4A Classroom Practice N")
+- `assignment-build.ts` does NOT currently filter LA non-CP/non-Test rows — they would still produce assignments
+- Course ID 21944 already hardcoded in `course-ids.ts` ✅
+- Prefix in `system_config.assignment_prefixes` is `"ELA4:"` — needs update to `"ELA4A"` to match user spec
+- No CP type recognition in pacing entry UI — need to verify it's a selectable type
 
-## Plan: Math Triple Logic + Even/Odd Confirmation
+## Plan: Language Arts CP/Test-Only Rule
 
-### 1. Triple expander — `src/lib/assignment-build.ts`
-Add `expandMathRow(cell, dayIndex, ctx)` → returns array of `BuiltAssignment`:
-- If `subject === 'Math'` AND `cell.isTest === true` (or `cell.type === 'Test'`):
-  1. **Written Test** — `type: 'Test'`, due same day
-  2. **Fact Test** — `type: 'Fact Test'`, due same day, `isSynthetic: true`
-  3. **Study Guide** — `type: 'Study Guide'`, `dayOffset: -1` (due previous day), `isSynthetic: true`, `omitFromFinal: true` (already handled)
-- Otherwise → single Math HW assignment (Evens/Odds title already auto-derived from lesson parity)
+### 1. Build-time filter — `src/lib/assignment-build.ts`
+In `buildAssignmentForCell()`, after type resolution, add LA guard:
+- If `subject === 'Language Arts'` AND `type` is NOT one of `['CP', 'Classroom Practice', 'Test']` → set `skipReason = 'LA — only CP and Test create assignments'`
+- Use a helper `isLanguageArtsAssignable(type)` in a new section of `friday-rules.ts` or inline (simple enough inline)
 
-Edge cases:
-- Monday Test → Study Guide would fall on Sunday (dayOffset gives -1 from index 0). Guard: if `dayOffset` results in negative index OR weekend, push to previous Friday (cap at index 0 = Monday of same week, fall back to same day with note)
-- For Grade 4 Math, tests typically Wed/Thu/Fri so this rarely triggers — log warning to deploy_log if it does
+### 2. Prefix update — DB migration
+- Update `system_config.assignment_prefixes` JSONB: `"Language Arts": "ELA4A"` (was `"ELA4:"`)
+- Single UPDATE statement in migration
 
-### 2. Even/Odd HW title — already working
-- `generateAssignmentTitle('Math', 'Lesson', '92', 'SM5:')` → `"SM5: Evens HW — Lesson 92"` ✅
-- `generateAssignmentTitle('Math', 'Lesson', '91', 'SM5:')` → `"SM5: Odds HW — Lesson 91"` ✅
-- No code change needed; just verify in preview
+### 3. Title format verification — `src/lib/assignment-logic.ts`
+Current LA titles:
+- Test → `"ELA4A Shurley Test"` (no lesson num) ✅
+- CP → `"ELA4A Classroom Practice N"` ✅
+- Default lesson → `"ELA4A English N"` (will never deploy now per rule above)
 
-### 3. AssignmentsPage wiring — `src/pages/AssignmentsPage.tsx`
-- Where rows are built into preview, replace single `buildAssignmentForCell()` call with `expandMathRow()` for Math rows
-- For non-Math subjects, keep single-build path
-- Preview table already shows multiple rows per cell since each `BuiltAssignment` has unique `rowKey`
+No code change needed — prefix flows through from config.
 
-### 4. Memory update
-- Update `mem://business-rules/subject-logic` Math section with explicit Triple Logic contract:
-  - Test row → 3 deployed items (Written Test, Fact Test, Study Guide -1 day)
-  - Lesson row → 1 item, title "Evens HW" or "Odds HW" by lesson parity
-- Add Core line: "Math Test rows always deploy as Triple: Written Test + Fact Test + Study Guide (due day-1)"
+### 4. Pacing entry — `src/pages/PacingEntryPage.tsx`
+- Verify `CP` is in the LA type dropdown options (alongside `Lesson`, `Test`)
+- For LA rows where type is NOT CP/Test, display a small muted hint "No assignment will be created" next to the create_assign checkbox (which should auto-disable)
+- Auto-set `create_assign = false` on LA rows when type is `Lesson` (or anything not CP/Test)
 
-### Technical details (devs only)
-- `expandMathRow` signature: `(subject, dayIndex, cell, ctx) => Promise<BuiltAssignment[]>`
-- `dayOffset: -1` semantics: subtracts one weekday in `weekDates[dayIndex - 1]`; if `dayIndex === 0` (Monday Test), Study Guide falls back to Monday with helper note "Study Guide for Monday Test — distribute Friday prior"
-- All three items share the same `rowId` for tracking but get distinct `canvas_assignment_id` via `rowKey` suffix (`syn` flag distinguishes synthetic rows in `pacing_rows` mirror)
-- DB consideration: synthetic rows (Fact Test, Study Guide) need their own `pacing_rows` entry OR be tracked in a sibling table. Simpler: store on parent row's `metadata` JSONB — but `pacing_rows` has no metadata column. Cleanest: insert synthetic siblings into `pacing_rows` with `subject='Math'`, distinct `lesson_num` suffix (`92-FT`, `92-SG`), and a new boolean `is_synthetic` column
+### 5. DB trigger hardening — migration
+Extend `enforce_friday_rules` (or add a sibling trigger `enforce_subject_rules`) to also force `create_assign = false` on `pacing_rows` where:
+- `subject = 'Language Arts'` AND `type NOT IN ('CP', 'Classroom Practice', 'Test')`
+- Bypass for synthetic rows
 
-### 5. DB migration — synthetic row tracking
-- Add nullable `is_synthetic boolean default false` and `parent_row_id uuid` to `pacing_rows`
-- Allows Triple Logic deployments to track all 3 Canvas IDs independently
-- Update `enforce_friday_rules` trigger to leave synthetic rows alone (Tests can be Friday)
+Defense-in-depth: ensures GAS sync, manual SQL, or paste imports respect the rule.
+
+### 6. Memory updates
+- Update `mem://business-rules/subject-logic` LA section: only CP + Test deploy as assignments; prefix `ELA4A`; course `21944`
+- Update `mem://business-rules/assignment-logic` if it references LA
+- Add Core line to `mem://index.md`: "Language Arts: only CP and Test rows create assignments; prefix ELA4A; course 21944"
 
 ### Out of scope
-- Math Quiz, Mid-chapter checkpoint (not in current row types)
-- Cross-week Study Guide (Monday Test edge case handled with same-day fallback)
+- LA page rendering (lesson rows still appear on Canvas pages, just no assignments)
+- LA announcement rules (no spec given)
 
 ### Order
-1. `pacing_rows` migration: `is_synthetic`, `parent_row_id`
-2. `expandMathRow()` in `assignment-build.ts`
-3. `AssignmentsPage.tsx` wiring + preview table label ("Synthetic" badge for Fact Test/Study Guide)
+1. DB migration: prefix update + trigger extension for LA rule
+2. `assignment-build.ts` LA assignable filter
+3. `PacingEntryPage.tsx` UI hint + auto-disable create_assign for non-CP/Test LA rows
 4. Memory updates
 
-After build: verify by adding a Math Test row in Pacing Entry, opening Assignments page, and confirming 3 deployable rows appear in preview with correct titles, due dates, and groups.
+After build: verify by adding a Language Arts row of type `Lesson` in Pacing Entry, opening the Assignments page, and confirming no LA assignment appears in preview. Then add a `CP` row and confirm `"ELA4A Classroom Practice N"` appears with course 21944.
