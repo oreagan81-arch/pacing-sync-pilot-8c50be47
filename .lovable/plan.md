@@ -1,46 +1,38 @@
 
-Audit:
-- `auto_logic.historyScienceNoAssign: true` already set in DB
-- `assignment-build.ts` already skips History/Science via this flag — already enforced ✅
-- No "active subject" tracking exists; need to add per-week toggle
-- `canvas-html.ts` has no redirect-page variant
-- Page Builder deploys both H+S separately today
+Most of this already ships. Tightening the remaining gaps for "premium" feel + faster skip path.
 
-## Plan: History/Science Mutual Redirect
+### Already in place ✅
+- `generateCanvasPageHtml` renders Banner → Week Range → Reminders → Resources → Mon–Fri blocks with In Class / At Home, Friday At Home omitted, mobile-friendly inline styles
+- `canvas-deploy-page` GETs existing page, body-compares, returns `NO_CHANGE` when identical
+- Front-page support: `setFrontPage` flag, post-create PUT, `published: true` on front pages
+- Retry on 5xx/429, full deploy_log + deploy_notifications
 
-### 1. DB — track active subject per week
-Migration: add `active_hs_subject text` to `weeks` (values: `'History'` | `'Science'` | null). Single column on `weeks` (already per-week scoped).
+### Gaps to close
 
-### 2. New HTML generator — `src/lib/canvas-html.ts`
-Add `generateRedirectPageHtml({ thisSubject, activeSubject, weekNum, quarter, dateRange, quarterColor })`:
-- Banner: "{thisSubject} — Weekly Agenda"
-- Single block with the exact text:
-  > We are currently in {activeSubject}.
-  > Please visit the {activeSubject} Canvas course for this week's agenda.
-- Linkify "{activeSubject} Canvas course" → `https://thalesacademy.instructure.com/courses/{COURSE_IDS[activeSubject]}`
+**1. Hash-based pre-skip (faster than body compare)**
+- Add `page_hashes jsonb default '{}'::jsonb` to `weeks` table
+- Client computes SHA-256 of generated `bodyHtml`, sends as `contentHash` in deploy payload
+- Edge function: if incoming hash matches `weeks.page_hashes[subject]` → skip Canvas GET entirely, return `NO_CHANGE`
+- On successful deploy, write hash back to `weeks.page_hashes[subject]`
+- Net: 1 fewer Canvas API call per unchanged page
 
-### 3. Assignment build — confirm
-`buildAssignmentForCell` already returns `skipReason='${subject} — no assignments'` for both. No change needed; rule is now mandatory (not gated by flag) — harden by removing dependency on `auto.historyScienceNoAssign` flag and always skip H+S.
+**2. Front-page published guard**
+- In `canvas-deploy-page`, ensure PUT body always includes `published: true` when existing page has `front_page: true`, even when `setFrontPage` flag isn't passed (prevents accidental unpublish of homepage)
 
-### 4. Page Builder — `src/pages/PageBuilderPage.tsx`
-When deploying History or Science page:
-- Read `weeks.active_hs_subject` for the selected week
-- If active subject is the OTHER one → call `generateRedirectPageHtml` instead of `generateCanvasPageHtml`
-- If `active_hs_subject` is null → deploy normally (both get full pages, current behavior)
+**3. Banner polish**
+- Quarter-color linear gradient on banner background (with solid fallback for RCE)
+- Muted "Last updated: {date}" line under subtitle
 
-### 5. Pacing Entry UI — `src/pages/PacingEntryPage.tsx`
-Add a small "Active H/S Subject" toggle near the week header: `History` | `Science` | `Both` (null). Persists to `weeks.active_hs_subject`. Show inline note: "The other subject's Canvas page will show a redirect."
+**4. Empty-state + resource labels**
+- Empty `in_class` on a class day → render `<em>Lesson plan TBD</em>` instead of blank `<p>`
+- Resources support `Label | URL` pipe-separated format; falls back to URL-segment label
 
-### 6. Memory
-- Update `mem://business-rules/subject-logic` H+S section with redirect contract + exact redirect copy
-- Add Core line: "History/Science: never create assignments. Per-week active subject toggle; inactive subject's page deploys a redirect to the active one."
+### Files
+1. Migration: `weeks.page_hashes jsonb`
+2. `src/lib/canvas-html.ts` — gradient banner, last-updated stamp, TBD fallback, pipe-label resources
+3. `supabase/functions/canvas-deploy-page/index.ts` — accept `contentHash`, hash pre-skip, harden front_page published guard, write hash back on success
+4. `src/pages/PageBuilderPage.tsx` — compute SHA-256 client-side, pass `contentHash`, refresh `page_hashes` after deploy
+5. `mem://integrations/canvas/deployment-optimization` — append page-hash flow
 
-### Order
-1. DB migration: `weeks.active_hs_subject`
-2. `generateRedirectPageHtml` in `canvas-html.ts`
-3. `assignment-build.ts` harden (remove flag dependency)
-4. `PageBuilderPage.tsx` redirect routing
-5. `PacingEntryPage.tsx` toggle UI
-6. Memory updates
-
-After build: verify by setting active subject = Science on a week, deploying both H + S pages, and confirming History Canvas page shows the redirect text linking to course 21970, while Science page renders normally.
+### Verify
+Deploy the same week's Reading page twice. First: `DEPLOYED`. Second: `NO_CHANGE` with no Canvas GET in logs. Toggle "Set as homepage" → page becomes front page and stays published on re-deploy.
