@@ -93,6 +93,41 @@ const DIVIDER_STYLE = (color: string) =>
 const DAY_HEADER_STYLE = (color: string) =>
   `background-color: ${color}; color: #ffffff; border-color: ${color};`;
 
+// Darken a hex color by a given percent (0-100). Used for banner gradients.
+function darkenHex(hex: string, pct: number): string {
+  const h = hex.replace('#', '');
+  const num = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16);
+  const amt = Math.round(2.55 * pct);
+  const r = Math.max(0, ((num >> 16) & 0xff) - amt);
+  const g = Math.max(0, ((num >> 8) & 0xff) - amt);
+  const b = Math.max(0, (num & 0xff) - amt);
+  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
+}
+
+// Banner inline style: solid fallback first (for older RCEs), then gradient layered via background shorthand.
+const BANNER_BG_STYLE = (color: string) =>
+  `color: #ffffff; background-color: ${color}; background: linear-gradient(135deg, ${color} 0%, ${darkenHex(color, 15)} 100%); text-align: center;`;
+
+function formatLastUpdated(): string {
+  const d = new Date();
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// Resource line → <a> or text. Supports "Label | URL" pipe syntax.
+function renderResourceLine(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  const pipe = trimmed.split('|').map((s) => s.trim());
+  if (pipe.length === 2 && pipe[1].startsWith('http')) {
+    return `        <p style="line-height: 1.5;"><a href="${pipe[1]}" target="_blank">${pipe[0]}</a></p>`;
+  }
+  if (trimmed.startsWith('http')) {
+    const label = trimmed.split('/').pop() || 'Resource';
+    return `        <p style="line-height: 1.5;"><a href="${trimmed}" target="_blank">${label}</a></p>`;
+  }
+  return `        <p style="line-height: 1.5;">${trimmed}</p>`;
+}
+
 export function generateCanvasPageHtml(params: CanvasPageParams): string {
   const { subject, rows, quarter, weekNum, dateRange, reminders, resources, quarterColor, contentMap = [] } = params;
   const parts: string[] = [];
