@@ -1,0 +1,1 @@
+ALTER TABLE public.weeks ADD COLUMN IF NOT EXISTS page_hashes jsonb NOT NULL DEFAULT '{}'::jsonb;
