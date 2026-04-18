@@ -111,34 +111,46 @@ export type Database = {
       }
       content_map: {
         Row: {
+          auto_linked: boolean
           canonical_name: string | null
           canvas_file_id: string | null
           canvas_url: string | null
+          confidence: string | null
           created_at: string | null
           id: string
+          last_synced: string | null
           lesson_ref: string
+          slug: string | null
           subject: string
           type: string | null
           updated_at: string
         }
         Insert: {
+          auto_linked?: boolean
           canonical_name?: string | null
           canvas_file_id?: string | null
           canvas_url?: string | null
+          confidence?: string | null
           created_at?: string | null
           id?: string
+          last_synced?: string | null
           lesson_ref: string
+          slug?: string | null
           subject: string
           type?: string | null
           updated_at?: string
         }
         Update: {
+          auto_linked?: boolean
           canonical_name?: string | null
           canvas_file_id?: string | null
           canvas_url?: string | null
+          confidence?: string | null
           created_at?: string | null
           id?: string
+          last_synced?: string | null
           lesson_ref?: string
+          slug?: string | null
           subject?: string
           type?: string | null
           updated_at?: string
@@ -221,37 +233,49 @@ export type Database = {
       }
       files: {
         Row: {
+          canvas_url: string | null
           confidence: string | null
           created_at: string | null
           drive_file_id: string | null
           friendly_name: string | null
           id: string
           lesson_num: string | null
+          needs_rename: boolean
           original_name: string | null
+          renamed_at: string | null
+          slug: string | null
           subject: string | null
           type: string | null
           updated_at: string
         }
         Insert: {
+          canvas_url?: string | null
           confidence?: string | null
           created_at?: string | null
           drive_file_id?: string | null
           friendly_name?: string | null
           id?: string
           lesson_num?: string | null
+          needs_rename?: boolean
           original_name?: string | null
+          renamed_at?: string | null
+          slug?: string | null
           subject?: string | null
           type?: string | null
           updated_at?: string
         }
         Update: {
+          canvas_url?: string | null
           confidence?: string | null
           created_at?: string | null
           drive_file_id?: string | null
           friendly_name?: string | null
           id?: string
           lesson_num?: string | null
+          needs_rename?: boolean
           original_name?: string | null
+          renamed_at?: string | null
+          slug?: string | null
           subject?: string | null
           type?: string | null
           updated_at?: string
