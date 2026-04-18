@@ -250,6 +250,9 @@ export default function AssignmentsPage() {
             rowId: r.rowId || undefined,
             weekId: weekId || undefined,
             contentHash: r.contentHash,
+            day: r.day,
+            type: r.type,
+            isSynthetic: r.isSynthetic,
           },
         );
         if (res.status === 'DEPLOYED') {

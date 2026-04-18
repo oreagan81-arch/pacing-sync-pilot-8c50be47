@@ -51,6 +51,7 @@ export function resolveAssignmentGroup(subject: string, type: string): Assignmen
 
   switch (subject) {
     case 'Math':
+      if (type === 'Study Guide') return { groupName: 'Homework/Class Work', points: 0, gradingType: 'points', omitFromFinal: true };
       if (type === 'Fact Test') return { groupName: 'Fact Assessments', points: 100, gradingType: 'points', omitFromFinal: false };
       if (isTest) return { groupName: 'Written Assessments', points: 100, gradingType: 'points', omitFromFinal: false };
       return { groupName: 'Homework/Class Work', points: 100, gradingType: 'points', omitFromFinal: false };

@@ -68,6 +68,7 @@ function buildDescription(
   inClass: string,
   atHome: string,
   contentMap: ContentMapEntry[],
+  options?: { isMondayTestStudyGuide?: boolean; readingTestPhrases?: string[] },
 ): string {
   const lines: string[] = [];
 
@@ -78,16 +79,25 @@ function buildDescription(
       lines.push(`<p>Math Fact Test <strong>${lessonNum}</strong>. Complete in class.</p>`);
     } else if (type === 'Study Guide') {
       lines.push(`<p>Study Guide for Lesson <strong>${lessonNum}</strong>. Bring to class.</p>`);
+      if (options?.isMondayTestStudyGuide) {
+        lines.push(`<p><em>Note: distribute Friday prior so students can study over the weekend.</em></p>`);
+      }
     } else {
       const evens = lessonNum && parseInt(lessonNum) % 2 === 0;
       lines.push(`<p>Complete Lesson <strong>${lessonNum}</strong> ${evens ? 'Evens' : 'Odds'}. Show all work.</p>`);
     }
   } else if (subject === 'Reading') {
-    lines.push(
-      type === 'Test'
-        ? `<p>Reading Mastery Test <strong>${lessonNum}</strong>.</p>`
-        : `<p>Reading Lesson <strong>${lessonNum}</strong> homework.</p>`,
-    );
+    if (type === 'Test') {
+      lines.push(`<p>Reading Mastery Test <strong>${lessonNum}</strong>.</p>`);
+      const phrases = options?.readingTestPhrases ?? [];
+      if (phrases.length > 0) {
+        lines.push(
+          `<ul>${phrases.map((p) => `<li>${p}</li>`).join('')}</ul>`,
+        );
+      }
+    } else {
+      lines.push(`<p>Reading Lesson <strong>${lessonNum}</strong> homework.</p>`);
+    }
   } else if (subject === 'Spelling') {
     lines.push(`<p>Spelling Test <strong>${lessonNum}</strong>.</p>`);
   } else if (subject === 'Language Arts') {
@@ -202,6 +212,8 @@ export async function buildAssignmentForCell(
   }
   if (cell.isNoClass) skipReason = 'No class';
 
+  const isMondayTestStudyGuide =
+    subject === 'Math' && type === 'Study Guide' && dayIndex === 0 && (options?.dayOffset ?? 0) === 0;
   const description = buildDescription(
     subject,
     type,
@@ -209,6 +221,10 @@ export async function buildAssignmentForCell(
     cell.value || '',
     '',
     contentMap,
+    {
+      isMondayTestStudyGuide,
+      readingTestPhrases: config.autoLogic?.readingTestPhrases ?? [],
+    },
   );
 
   const contentHash = await hashAssignment({
