@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   Library,
   Brain,
+  Zap,
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useLocation } from 'react-router-dom';
@@ -42,6 +43,7 @@ const navItems = [
   { title: 'Content Registry', url: '/content-registry', icon: Library },
   { title: 'Health Monitor', url: '/health', icon: Activity },
   { title: 'Memory', url: '/memory', icon: Brain },
+  { title: 'Automation', url: '/automation', icon: Zap },
   { title: 'Settings', url: '/settings', icon: Settings },
 ];
 
