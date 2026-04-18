@@ -462,7 +462,7 @@ export default function ContentRegistryPage() {
             </CardContent></Card>
             <Card><CardContent className="pt-6">
               <div className="text-2xl font-bold text-success">{stats.coverage}%</div>
-              <div className="text-xs text-muted-foreground">Coverage ({stats.expected - stats.expected + (stats.expected - 0)} expected)</div>
+              <div className="text-xs text-muted-foreground">Coverage ({stats.expected} expected)</div>
             </CardContent></Card>
             <Card><CardContent className="pt-6">
               <div className="text-2xl font-bold text-warning">{stats.unclassified}</div>
