@@ -212,6 +212,8 @@ export async function buildAssignmentForCell(
   }
   if (cell.isNoClass) skipReason = 'No class';
 
+  const isMondayTestStudyGuide =
+    subject === 'Math' && type === 'Study Guide' && dayIndex === 0 && (options?.dayOffset ?? 0) === 0;
   const description = buildDescription(
     subject,
     type,
@@ -219,6 +221,10 @@ export async function buildAssignmentForCell(
     cell.value || '',
     '',
     contentMap,
+    {
+      isMondayTestStudyGuide,
+      readingTestPhrases: config.autoLogic?.readingTestPhrases ?? [],
+    },
   );
 
   const contentHash = await hashAssignment({
