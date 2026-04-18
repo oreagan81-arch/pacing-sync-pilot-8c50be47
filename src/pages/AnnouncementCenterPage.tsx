@@ -15,6 +15,7 @@ import { callEdge } from '@/lib/edge';
 import { useRealtimeDeploy } from '@/hooks/use-realtime-deploy';
 import { expandSpellingTest } from '@/lib/together-logic';
 import { TOGETHER_LOGIC_COURSE_ID, getCourseId } from '@/lib/course-ids';
+import { logEdit, learnFromEdit, logDeployHabit } from '@/lib/teacher-memory';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -371,6 +372,9 @@ export default function AnnouncementCenterPage() {
         subject: ann.subject,
       });
       await supabase.from('announcements').update({ status: 'POSTED', posted_at: new Date().toISOString() }).eq('id', ann.id);
+      void logEdit('announcement', ann.id, null, ann as never, 'deploy');
+      void learnFromEdit('announcement', null, ann as never);
+      void logDeployHabit(ann.subject || 'Announcement');
       toast.success(`Posted: ${ann.title}`);
       loadAnnouncements(selectedWeekId || undefined);
     } catch (e: any) {

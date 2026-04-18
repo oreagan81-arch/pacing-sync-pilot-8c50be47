@@ -12,7 +12,7 @@ Updated: just now
 - All deployments MUST include `published: true` on PUT if page is `front_page: true`.
 - Math Test rows always deploy as Triple: Written Test + Fact Test (same day) + Study Guide (due day-1, synthetic, omit_from_final).
 - Language Arts: only `CP` and `Test` rows create assignments; prefix `ELA4A`; course `21944`. DB trigger enforces.
-- History/Science: never create assignments. Per-week `weeks.active_hs_subject` toggle; inactive subject's Canvas page deploys a redirect to the active one.
+- All generators (assignment titles, page titles, announcement phrases, file names) follow Memory > Templates > AI precedence via `src/lib/memory-resolver.ts`.
 
 ## Memories
 - [Canvas Course Routing Logic](mem://integrations/canvas/routing-logic) — Course IDs and Reading/Spelling Together Logic
@@ -32,3 +32,4 @@ Updated: just now
 - [Content Map Registry](mem://db/content-map-registry) — Auto-linking lesson identifiers to Canvas files and Orphan detection
 - [Reading + Spelling Together Logic](mem://business-rules/together-logic) — Shared course/page/announcement, separate assignments, Spelling Test N=1..N×5
 - [Friday Rules](mem://business-rules/friday-rules) — Mandatory: no At Home, no homework, create_assign=false, DB trigger enforced; 4 PM ET reminder exception
+- [Teacher Memory Layer](mem://features/teacher-memory-layer) — Capture-resolve loop: logs edits, scores patterns, applies via Memory > Templates > AI precedence

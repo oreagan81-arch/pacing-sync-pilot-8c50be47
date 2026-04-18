@@ -11,6 +11,7 @@ import { generateAssignmentTitle, resolveAssignmentGroup } from './assignment-lo
 import { injectFileLinks, type ContentMapEntry } from './auto-link';
 import { getCourseId } from './course-ids';
 import { isFridayHomeworkBlocked, FRIDAY_SKIP_REASON } from './friday-rules';
+import { resolve as resolveMemory } from './memory-resolver';
 
 export interface BuiltAssignment {
   rowKey: string;
@@ -176,7 +177,14 @@ export async function buildAssignmentForCell(
   if (!courseId) return null;
 
   const prefix = config.assignmentPrefixes[subject] || '';
-  const title = options?.titleOverride || generateAssignmentTitle(subject, type, lessonNum, prefix);
+  const title =
+    options?.titleOverride ||
+    (await resolveMemory(
+      'assignment_name',
+      `${subject}:${type}`,
+      () => generateAssignmentTitle(subject, type, lessonNum, prefix),
+      { lessonNum },
+    ));
   const groupInfo = resolveAssignmentGroup(subject, type);
 
   // Skip rules — Friday rule is MANDATORY (not gated by config flag)

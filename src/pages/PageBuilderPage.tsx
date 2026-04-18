@@ -18,6 +18,7 @@ import {
   filterTogetherPageRows,
   resolveTogetherCourseId,
 } from '@/lib/together-logic';
+import { logDeployHabit } from '@/lib/teacher-memory';
 
 const PAGE_SUBJECTS = ['Math', 'Reading', 'Language Arts', 'History', 'Science', 'Homeroom'] as const;
 const DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -318,6 +319,7 @@ export default function PageBuilderPage() {
 
       if (result.status === 'DEPLOYED' || result.status === 'NO_CHANGE') {
         setDeployStatuses((p) => ({ ...p, [subject]: { status: result.status!, canvasUrl: result.canvasUrl } }));
+        if (result.status === 'DEPLOYED') void logDeployHabit(subject);
         toast.success(`${subject} agenda ${result.status === 'NO_CHANGE' ? 'up to date' : 'deployed & set as homepage'}`, {
           action: result.canvasUrl ? { label: 'Open', onClick: () => window.open(result.canvasUrl, '_blank') } : undefined,
         });
