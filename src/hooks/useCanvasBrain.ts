@@ -7,6 +7,11 @@ import {
   fetchLearnedPatterns,
   fetchSnapshotStats,
 } from '@/lib/canvas-brain';
+import { getStyleConfidence } from '@/lib/canvas-brain-suggest';
+
+export function useStyleConfidence() {
+  return useQuery({ queryKey: ['canvas-brain', 'confidence'], queryFn: getStyleConfidence });
+}
 
 export function useSnapshotStats() {
   return useQuery({ queryKey: ['canvas-brain', 'snapshots'], queryFn: fetchSnapshotStats });
