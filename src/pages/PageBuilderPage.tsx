@@ -19,6 +19,7 @@ import {
   resolveTogetherCourseId,
 } from '@/lib/together-logic';
 import { logDeployHabit } from '@/lib/teacher-memory';
+import { StyleSuggestions } from '@/components/canvas-brain/StyleSuggestions';
 
 const PAGE_SUBJECTS = ['Math', 'Reading', 'Language Arts', 'History', 'Science', 'Homeroom'] as const;
 const DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -468,6 +469,8 @@ export default function PageBuilderPage() {
                   {statusBadge(activeSubject)}
                 </div>
               </CardHeader>
+              <CardContent className="space-y-3">
+                <StyleSuggestions type="page_section_order" subject={activeSubject} />
               <CardContent className="space-y-3">
                 <div className="text-xs text-muted-foreground space-y-1">
                   <p><strong>Page URL:</strong> {selectedWeek ? getPageSlug(selectedWeek.quarter, selectedWeek.week_num) : '\u2014'}</p>
