@@ -94,6 +94,17 @@ export default function PacingEntryPage({
   const [sheetLoading, setSheetLoading] = useState(false);
   const [activeHsSubject, setActiveHsSubject] = useState<string>('Both');
   const [savedWeeks, setSavedWeeks] = useState<{ id: string; quarter: string; week_num: number }[]>([]);
+  const [contentMap, setContentMap] = useState<ContentMapEntry[]>([]);
+
+  // Load content_map for resource badges
+  useEffect(() => {
+    supabase
+      .from('content_map')
+      .select('lesson_ref, subject, canvas_url, canonical_name')
+      .then(({ data }) => {
+        if (data) setContentMap(data as ContentMapEntry[]);
+      });
+  }, []);
 
   // Compute risk on every change
   useEffect(() => {
