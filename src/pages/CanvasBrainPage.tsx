@@ -1,4 +1,4 @@
-import { Brain, RefreshCw, BookOpen, Activity, Sparkles, History } from 'lucide-react';
+import { Brain, RefreshCw, BookOpen, Activity, Sparkles, History, Gauge } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import {
   useLastSync,
   useLearnedPatterns,
   useSnapshotStats,
+  useStyleConfidence,
   useSyncNow,
 } from '@/hooks/useCanvasBrain';
 import { CONNECTED_COURSES, subjectForCourseId } from '@/lib/canvas-brain';
