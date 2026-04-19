@@ -489,8 +489,8 @@ export default function PacingEntryPage({
         )}
       </div>
 
-      {/* Day × Subject grid */}
-      <div className="rounded-lg border border-border bg-card/30 overflow-x-auto">
+      {/* Day × Subject grid — desktop (≥md) */}
+      <div className="hidden md:block rounded-lg border border-border bg-card/30 overflow-x-auto">
         <div className="min-w-[1100px]">
           {/* Day header row */}
           <div className="grid grid-cols-[120px_repeat(5,1fr)] gap-2 p-2 border-b border-border bg-muted/30 sticky top-0 z-10">
@@ -515,7 +515,6 @@ export default function PacingEntryPage({
             const isHsBlocked =
               !!config?.autoLogic.historyScienceNoAssign &&
               (subject === 'History' || subject === 'Science');
-            // Hide non-active H/S row if user pinned one
             if (
               activeHsSubject !== 'Both' &&
               ((subject === 'History' && activeHsSubject === 'Science') ||
@@ -528,7 +527,6 @@ export default function PacingEntryPage({
                 key={subject}
                 className="grid grid-cols-[120px_repeat(5,1fr)] gap-2 p-2 border-b border-border/50 last:border-b-0"
               >
-                {/* Subject label cell */}
                 <div className="flex flex-col justify-center gap-1 px-2">
                   <span className="text-sm font-bold leading-tight">{subject}</span>
                   {courseId && (
@@ -553,7 +551,6 @@ export default function PacingEntryPage({
                     })()}
                 </div>
 
-                {/* 5 day cards */}
                 {DAYS.map((day) => {
                   const cell = weekData[subject][day];
                   const isLaBlocked =
@@ -581,6 +578,80 @@ export default function PacingEntryPage({
             );
           })}
         </div>
+      </div>
+
+      {/* Mobile (<md): subjects stack vertically; days scroll horizontally inside each row */}
+      <div className="md:hidden space-y-3">
+        {SUBJECTS.map((subject) => {
+          const courseId = config?.courseIds[subject];
+          const prefix = config?.assignmentPrefixes[subject] ?? '';
+          const isHsBlocked =
+            !!config?.autoLogic.historyScienceNoAssign &&
+            (subject === 'History' || subject === 'Science');
+          if (
+            activeHsSubject !== 'Both' &&
+            ((subject === 'History' && activeHsSubject === 'Science') ||
+              (subject === 'Science' && activeHsSubject === 'History'))
+          ) {
+            return null;
+          }
+          return (
+            <div key={subject} className="rounded-lg border border-border bg-card/30 overflow-hidden">
+              <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-muted/30">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm font-bold leading-tight truncate">{subject}</span>
+                  {courseId && (
+                    <span className="text-[9px] font-mono text-muted-foreground">#{courseId}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {isTestWeek(subject) && (
+                    <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-warning">
+                      Test
+                    </span>
+                  )}
+                  {subject === 'Math' &&
+                    (() => {
+                      const pu = getPowerUp(weekData.Math.Monday.lesson_num);
+                      return pu ? (
+                        <span className="rounded bg-accent px-1.5 py-0.5 text-[9px] font-bold text-accent-foreground">
+                          PU {pu}
+                        </span>
+                      ) : null;
+                    })()}
+                </div>
+              </div>
+              <div className="overflow-x-auto snap-x snap-mandatory">
+                <div className="flex gap-2 p-2" style={{ minWidth: 'max-content' }}>
+                  {DAYS.map((day) => {
+                    const cell = weekData[subject][day];
+                    const isLaBlocked =
+                      subject === 'Language Arts' && !isLanguageArtsAssignable(cell.type);
+                    return (
+                      <div key={day} className="snap-start w-[260px] shrink-0">
+                        <DaySubjectCard
+                          subject={subject}
+                          day={day}
+                          cell={cell}
+                          prefix={prefix}
+                          isFriday={day === 'Friday'}
+                          isHsBlocked={isHsBlocked}
+                          isLaBlocked={isLaBlocked}
+                          availableTypes={SUBJECT_TYPES[subject] ?? ['Lesson', 'Test', '-']}
+                          contentMap={contentMap}
+                          subjectAccent="hsl(var(--primary))"
+                          onChange={(field, value) =>
+                            updateCell(subject, day, field as keyof typeof cell, value)
+                          }
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
