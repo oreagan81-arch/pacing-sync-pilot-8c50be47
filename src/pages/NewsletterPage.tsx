@@ -68,8 +68,9 @@ export default function NewsletterPage() {
       setBirthdays(result.birthdays || '');
       setExtraSections(result.sections || []);
       toast.success('Content extracted!');
-    } catch (e: any) {
-      toast.error('Extraction failed', { description: e.message });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unknown error';
+      toast.error('Extraction failed', { description: message });
     }
     setExtracting(false);
   };
@@ -92,8 +93,9 @@ export default function NewsletterPage() {
       setBirthdays(result.birthdays || birthdays);
       if (result.sections?.length) setExtraSections(result.sections);
       toast.success('Content polished by AI!');
-    } catch (e: any) {
-      toast.error('Polish failed', { description: e.message });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unknown error';
+      toast.error('Polishing failed', { description: message });
     }
     setPolishing(false);
   };

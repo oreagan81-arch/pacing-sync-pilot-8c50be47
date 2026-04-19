@@ -146,8 +146,9 @@ export default function FileOrganizerPage() {
       }).eq('id', file.id);
       toast.success(`AI classified: ${result.subject} ${result.type}`);
       loadFiles();
-    } catch (e: any) {
-      toast.error('AI classification failed', { description: e.message });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unknown error';
+      toast.error('AI classification failed', { description: message });
     }
     setClassifying(false);
   };

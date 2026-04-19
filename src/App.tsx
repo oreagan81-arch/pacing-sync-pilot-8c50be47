@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { Toaster as Sonner } from '@/components/ui/sonner';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { ConfigContext, loadConfig, type AppConfig } from '@/lib/config';
 import { useEffect, useState } from 'react';
@@ -138,7 +139,9 @@ const App = () => {
         <ConfigContext.Provider value={config}>
           <Toaster />
           <Sonner />
-          <AppContent config={config} />
+          <ErrorBoundary>
+            <AppContent config={config} />
+          </ErrorBoundary>
         </ConfigContext.Provider>
       </TooltipProvider>
     </QueryClientProvider>

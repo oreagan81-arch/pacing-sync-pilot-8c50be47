@@ -2,12 +2,17 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { listAssignments } from '../_shared/canvas-api.ts';
 import { getCourseIds } from '../_shared/canvas-courses.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+function getCorsHeaders(origin?: string) {
+  return {
+    'Access-Control-Allow-Origin': origin === 'https://thalesacademy.instructure.com' ? origin : 'false',
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
+}
 
 Deno.serve(async (req) => {
+  const origin = req.headers.get('origin') ?? undefined;
+  const corsHeaders = getCorsHeaders(origin);
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   try {
     const sb = createClient(

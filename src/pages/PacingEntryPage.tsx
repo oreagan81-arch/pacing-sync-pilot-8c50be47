@@ -207,8 +207,9 @@ export default function PacingEntryPage({
         .order('quarter')
         .order('week_num');
       if (updated) setSavedWeeks(updated);
-    } catch (e: any) {
-      toast.error('Save failed', { description: e.message });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unknown error';
+      toast.error('Save failed', { description: message });
     }
     setSaving(false);
   };

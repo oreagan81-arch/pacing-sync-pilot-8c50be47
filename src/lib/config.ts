@@ -6,6 +6,7 @@ export interface AutoLogic {
   mathEvenOdd: boolean;
   mathTestTriple: boolean;
   readingTestPhrases: string[];
+  readingFluencyBenchmarks: Record<string, { wpm: number; errors: number }>;
   fridayNoHomework: boolean;
   historyScienceNoAssign: boolean;
   frontPageProtection: boolean;

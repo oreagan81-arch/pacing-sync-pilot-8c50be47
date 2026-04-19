@@ -1,5 +1,6 @@
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "false",
+  "Access-Control-Allow-Credentials": "true",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 

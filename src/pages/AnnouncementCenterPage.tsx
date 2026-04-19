@@ -14,8 +14,16 @@ import { useConfig, type AppConfig } from '@/lib/config';
 import { callEdge } from '@/lib/edge';
 import { useRealtimeDeploy } from '@/hooks/use-realtime-deploy';
 import { expandSpellingTest } from '@/lib/together-logic';
+import { getReadingFluencyBenchmark } from '@/lib/reading-fluency';
 import { TOGETHER_LOGIC_COURSE_ID, getCourseId } from '@/lib/course-ids';
 import { logEdit, learnFromEdit, logDeployHabit } from '@/lib/teacher-memory';
+import {
+  getNextFriday4PM,
+  getPreviousFriday4PM,
+  getWednesdayBefore,
+  getOneWeekBefore,
+  getTwoDaysBefore,
+} from '@/lib/date-utils';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -161,7 +169,7 @@ export default function AnnouncementCenterPage() {
       const weekLabel = week ? `${week.quarter} Wk ${week.week_num}` : '';
       const drafts: DraftInsert[] = [];
 
-      // ─── A. Math Test Logic (Early Friday + Urgent Wednesday) ──────────
+      // ─── A. Math Test Logic (1 week + 2 days before) ──────────────────
       const mathTests = rows.filter((r) => r.subject === 'Math' && /test/i.test(r.type || ''));
       for (const mt of mathTests) {
         const lesson = mt.lesson_num || '';
@@ -169,62 +177,120 @@ export default function AnnouncementCenterPage() {
         const factTest = lesson ? `Fact Test ${lesson}` : 'Fact Test';
         const studyGuideUrl = mt.canvas_url || '';
 
-        // Early draft → previous Friday 4 PM ET
+        // Early draft → 1 week before test 4 PM ET
         drafts.push({
           week_id: selectedWeekId,
           subject: 'Math',
           type: 'test_reminder',
           status: 'DRAFT',
           course_id: getCourseId('Math'),
-          scheduled_post: getPreviousFriday4PM(),
+          scheduled_post: getOneWeekBefore(mt.day),
           title: `🔢 Heads Up: Math Test — Lesson ${lesson} (${mt.day})`,
           content: buildMathEarlyHtml({ lesson, day: mt.day, powerUp, factTest, studyGuideUrl, weekLabel }),
         });
 
-        // Urgent draft → Wednesday before test 4 PM ET
+        // Urgent draft → 2 days before test 4 PM ET
         drafts.push({
           week_id: selectedWeekId,
           subject: 'Math',
           type: 'test_reminder',
           status: 'DRAFT',
           course_id: getCourseId('Math'),
-          scheduled_post: getWednesdayBefore(mt.day),
+          scheduled_post: getTwoDaysBefore(mt.day),
           title: `⚠️ Tomorrow-ish: Math Test Lesson ${lesson}`,
           content: buildMathUrgentHtml({ lesson, day: mt.day, powerUp, factTest, studyGuideUrl }),
         });
       }
 
-      // ─── B. Reading + Spelling Together Logic ──────────────────────────
+      // ─── B. Reading + Spelling Together Logic (1 week + 2 days) ─────────
       const readingTest = rows.find((r) => r.subject === 'Reading' && /test/i.test(r.type || ''));
       const spellingTest = rows.find((r) => r.subject === 'Spelling' && /test/i.test(r.type || ''));
       if (readingTest || spellingTest) {
         const rNum = readingTest?.lesson_num || '';
         const sNum = parseInt(spellingTest?.lesson_num || '0', 10) || 0;
-        const dateStr = readingTest?.day || spellingTest?.day || 'this week';
+        const testDay = readingTest?.day || spellingTest?.day || 'Friday';
+        const dateStr = testDay;
         const spellingExp = sNum > 0
           ? expandSpellingTest(sNum, (config.spellingWordBank || {}) as Record<string, string[]>)
           : null;
 
+        // Resolve fluency benchmark based on test number
+        const fluencyBenchmark = getReadingFluencyBenchmark(
+          rNum,
+          config?.autoLogic.readingFluencyBenchmarks || {}
+        );
+
+        // Early announcement (1 week before)
         drafts.push({
           week_id: selectedWeekId,
           subject: 'Reading',
           type: 'test_reminder',
           status: 'DRAFT',
           course_id: TOGETHER_LOGIC_COURSE_ID,
-          scheduled_post: getNextFriday4PM(),
-          title: `📚 Reading Mastery Test ${rNum} and Fluency Checkout: ${dateStr}`,
+          scheduled_post: getOneWeekBefore(testDay),
+          title: `📚 Heads Up: Reading Mastery Test ${rNum} — ${dateStr}`,
           content: buildReadingSpellingHtml({
             testNum: rNum,
             testDate: dateStr,
             checkoutLesson: rNum,
             spellingFocus: spellingExp?.focusWords || [],
             spellingTestNum: sNum || null,
+            isEarly: true,
+            fluencyBenchmark,
+          }),
+        });
+
+        // Urgent announcement (2 days before)
+        drafts.push({
+          week_id: selectedWeekId,
+          subject: 'Reading',
+          type: 'test_reminder',
+          status: 'DRAFT',
+          course_id: TOGETHER_LOGIC_COURSE_ID,
+          scheduled_post: getTwoDaysBefore(testDay),
+          title: `⚠️ Two Days Away: Reading & Spelling Tests`,
+          content: buildReadingSpellingHtml({
+            testNum: rNum,
+            testDate: dateStr,
+            checkoutLesson: rNum,
+            spellingFocus: spellingExp?.focusWords || [],
+            spellingTestNum: sNum || null,
+            isEarly: false,
+            fluencyBenchmark,
           }),
         });
       }
 
-      // ─── C. Language Arts Weekly Summary ───────────────────────────────
+      // ─── C. Language Arts: Tests (1 week + 2 days) + Weekly Summary ─────
+      const laTests = rows.filter((r) => r.subject === 'Language Arts' && /test/i.test(r.type || ''));
       const laRows = rows.filter((r) => r.subject === 'Language Arts');
+      
+      for (const lat of laTests) {
+        // Early test announcement (1 week before)
+        drafts.push({
+          week_id: selectedWeekId,
+          subject: 'Language Arts',
+          type: 'test_reminder',
+          status: 'DRAFT',
+          course_id: getCourseId('Language Arts'),
+          scheduled_post: getOneWeekBefore(lat.day),
+          title: `✏️ Heads Up: Language Arts Test — ${lat.day}`,
+          content: buildSubjectTestHtml('Language Arts', lat, weekLabel, true),
+        });
+        // Urgent test announcement (2 days before)
+        drafts.push({
+          week_id: selectedWeekId,
+          subject: 'Language Arts',
+          type: 'test_reminder',
+          status: 'DRAFT',
+          course_id: getCourseId('Language Arts'),
+          scheduled_post: getTwoDaysBefore(lat.day),
+          title: `⚠️ Two Days Away: Language Arts Test`,
+          content: buildSubjectTestHtml('Language Arts', lat, weekLabel, false),
+        });
+      }
+
+      // LA weekly summary (if content exists)
       if (laRows.length > 0) {
         drafts.push({
           week_id: selectedWeekId,
@@ -238,21 +304,89 @@ export default function AnnouncementCenterPage() {
         });
       }
 
-      // ─── C2. History OR Science (whichever is active) ──────────────────
+      // ─── C2. History: Tests (1 week + 2 days) + Weekly Summary ─────────
+      const histTests = rows.filter((r) => r.subject === 'History' && /test/i.test(r.type || ''));
       const histRows = rows.filter((r) => r.subject === 'History');
-      const sciRows = rows.filter((r) => r.subject === 'Science');
-      const hsActive = histRows.length >= sciRows.length ? histRows : sciRows;
-      const hsSubject = histRows.length >= sciRows.length ? 'History' : 'Science';
-      if (hsActive.length > 0) {
+      
+      for (const hst of histTests) {
+        // Early test announcement (1 week before)
         drafts.push({
           week_id: selectedWeekId,
-          subject: hsSubject,
+          subject: 'History',
+          type: 'test_reminder',
+          status: 'DRAFT',
+          course_id: getCourseId('History'),
+          scheduled_post: getOneWeekBefore(hst.day),
+          title: `🏛️ Heads Up: History Test — ${hst.day}`,
+          content: buildSubjectTestHtml('History', hst, weekLabel, true),
+        });
+        // Urgent test announcement (2 days before)
+        drafts.push({
+          week_id: selectedWeekId,
+          subject: 'History',
+          type: 'test_reminder',
+          status: 'DRAFT',
+          course_id: getCourseId('History'),
+          scheduled_post: getTwoDaysBefore(hst.day),
+          title: `⚠️ Two Days Away: History Test`,
+          content: buildSubjectTestHtml('History', hst, weekLabel, false),
+        });
+      }
+
+      // History weekly summary (if rows exist)
+      if (histRows.length > 0) {
+        drafts.push({
+          week_id: selectedWeekId,
+          subject: 'History',
           type: 'weekly_summary',
           status: 'DRAFT',
-          course_id: getCourseId(hsSubject),
+          course_id: getCourseId('History'),
           scheduled_post: getNextFriday4PM(),
-          title: `${hsSubject === 'History' ? '🏛️' : '🔬'} ${hsSubject} — ${weekLabel} Overview`,
-          content: buildSubjectSummaryHtml(hsSubject, hsActive, weekLabel),
+          title: `🏛️ History — ${weekLabel} Overview`,
+          content: buildSubjectSummaryHtml('History', histRows, weekLabel),
+        });
+      }
+
+      // ─── C3. Science: Tests (1 week + 2 days) + Weekly Summary ────────
+      const sciTests = rows.filter((r) => r.subject === 'Science' && /test/i.test(r.type || ''));
+      const sciRows = rows.filter((r) => r.subject === 'Science');
+      
+      for (const sct of sciTests) {
+        // Early test announcement (1 week before)
+        drafts.push({
+          week_id: selectedWeekId,
+          subject: 'Science',
+          type: 'test_reminder',
+          status: 'DRAFT',
+          course_id: getCourseId('Science'),
+          scheduled_post: getOneWeekBefore(sct.day),
+          title: `🔬 Heads Up: Science Test — ${sct.day}`,
+          content: buildSubjectTestHtml('Science', sct, weekLabel, true),
+        });
+        // Urgent test announcement (2 days before)
+        drafts.push({
+          week_id: selectedWeekId,
+          subject: 'Science',
+          type: 'test_reminder',
+          status: 'DRAFT',
+          course_id: getCourseId('Science'),
+          scheduled_post: getTwoDaysBefore(sct.day),
+          title: `⚠️ Two Days Away: Science Test`,
+          content: buildSubjectTestHtml('Science', sct, weekLabel, false),
+        });
+      }
+
+      // Science weekly summary (if rows exist)
+      if (sciRows.length > 0) {
+        drafts.push({
+          week_id: selectedWeekId,
+          subject: 'Science',
+          type: 'weekly_summary',
+          status: 'DRAFT',
+          course_id: getCourseId('Science'),
+          scheduled_post: getNextFriday4PM(),
+          title: `🔬 Science — ${weekLabel} Overview`,
+          content: buildSubjectSummaryHtml('Science', sciRows, weekLabel),
         });
       }
 
@@ -279,8 +413,9 @@ export default function AnnouncementCenterPage() {
 
       toast.success(`Auto-generated ${drafts.length} announcement(s)`);
       loadAnnouncements(selectedWeekId);
-    } catch (e: any) {
-      toast.error('Auto-generate failed', { description: e.message });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unknown error';
+      toast.error('Auto-generate failed', { description: message });
     }
     setGenerating(false);
   };
@@ -294,12 +429,17 @@ export default function AnnouncementCenterPage() {
       return;
     }
     try {
+      const fluencyBenchmark = getReadingFluencyBenchmark(
+        rmTestNum,
+        config?.autoLogic.readingFluencyBenchmarks || {}
+      );
       const html = buildReadingSpellingHtml({
         testNum: rmTestNum,
         testDate: rmTestDate,
         checkoutLesson: rmCheckoutLesson || rmTestNum,
         spellingFocus: [],
         spellingTestNum: null,
+        fluencyBenchmark,
       });
       const { error } = await supabase.from('announcements').insert({
         week_id: selectedWeekId || null,
@@ -619,6 +759,8 @@ interface RSArgs {
   checkoutLesson: string;
   spellingFocus: string[];
   spellingTestNum: number | null;
+  isEarly?: boolean;
+  fluencyBenchmark?: { wpm: number; errors: number; label: string };
 }
 
 function buildReadingSpellingHtml(a: RSArgs): string {
@@ -628,11 +770,18 @@ function buildReadingSpellingHtml(a: RSArgs): string {
       <p><strong>Focus Words (21–25):</strong> ${a.spellingFocus.join(', ')}</p>
     `
     : '';
+  
+  const greeting = a.isEarly
+    ? `<p>Good afternoon! Tests are coming up on <strong>${a.testDate}</strong>.</p>`
+    : `<p>Reminder: Reading & Spelling tests are <strong>this week</strong> on <strong>${a.testDate}</strong>. Make final preparations!</p>`;
+
+  const fluencyLabel = a.fluencyBenchmark?.label || '100 words per minute with 2 or fewer errors';
+
   return wrapper('Reading', `
     ${banner('Reading', `Reading Mastery Test ${a.testNum} — ${a.testDate}`)}
-    <p>Good afternoon, I hope you are having a great week so far!</p>
+    ${greeting}
     <p>The mastery test will cover story details, background information, and vocabulary from our recent lessons. Students will also be reading a timed fluency passage.</p>
-    <p><strong>Fluency goal:</strong> The goal of this fluency check is to read 100 words in one minute with 2 or fewer errors.</p>
+    <p><strong>Fluency goal:</strong> The goal of this fluency check is to read ${fluencyLabel}.</p>
     <p>Make sure they are tracking and tapping so they do not miss any words or skip lines. Practice reading with your child every day, especially out loud.</p>
     <p>For practice, the checkout passage will come from lesson ${a.checkoutLesson}, reading up to the flower.</p>
     ${spellingBlock}
@@ -648,6 +797,33 @@ function buildSubjectSummaryHtml(subject: string, rows: PacingRow[], weekLabel: 
     ${banner(subject, `${subject} — ${weekLabel}`)}
     <p>Here is what we are covering in ${subject} this week:</p>
     <ul>${items || '<li>Continued practice from prior lessons.</li>'}</ul>
+  `);
+}
+
+function buildSubjectTestHtml(subject: string, row: PacingRow, weekLabel: string, isEarly: boolean): string {
+  const greeting = isEarly
+    ? `<p>Good afternoon! A <strong>${subject} test</strong> is coming up on <strong>${row.day}</strong>.</p>`
+    : `<p>Reminder: <strong>${subject} test</strong> is <strong>coming up soon on ${row.day}</strong>. Make final preparations!</p>`;
+  
+  const lessonInfo = row.lesson_num
+    ? `<p><strong>Lesson/Topic:</strong> ${escapeHtml(row.lesson_num)}</p>`
+    : '';
+  
+  const inClassInfo = row.in_class
+    ? `<p><strong>Content focus:</strong> ${escapeHtml(row.in_class)}</p>`
+    : '';
+  
+  const homeInfo = row.at_home
+    ? `<p><strong>Study at home:</strong> ${escapeHtml(row.at_home)}</p>`
+    : '';
+
+  return wrapper(subject, `
+    ${banner(subject, `${subject} Test — ${row.day}`)}
+    ${greeting}
+    ${lessonInfo}
+    ${inClassInfo}
+    ${homeInfo}
+    <p>Please help your child prepare by reviewing materials together this week.</p>
   `);
 }
 
@@ -678,60 +854,4 @@ function formatScheduled(iso: string): string {
     weekday: 'short', month: 'short', day: 'numeric',
     hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York',
   });
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// PART 4: Scheduling Utilities (America/New_York)
-// ────────────────────────────────────────────────────────────────────────────
-/** Eastern Time offset in hours for a given date (handles DST). */
-function etOffsetHours(date: Date): number {
-  // Use Intl to find ET offset; -5 EST or -4 EDT
-  const dtf = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' });
-  const parts = dtf.formatToParts(date);
-  const tz = parts.find((p) => p.type === 'timeZoneName')?.value || 'EST';
-  return tz === 'EDT' ? -4 : -5;
-}
-
-/** Build an ISO string for a given Y/M/D at HH:00 ET. */
-function etDateAt(year: number, month: number, day: number, hour: number): string {
-  const tmp = new Date(Date.UTC(year, month, day, hour, 0, 0));
-  const offset = etOffsetHours(tmp);
-  return new Date(Date.UTC(year, month, day, hour - offset, 0, 0)).toISOString();
-}
-
-export function getNextFriday4PM(): string {
-  const now = new Date();
-  const day = now.getDay();
-  const daysUntilFriday = (5 - day + 7) % 7 || 7;
-  const target = new Date(now);
-  target.setDate(now.getDate() + daysUntilFriday);
-  return etDateAt(target.getFullYear(), target.getMonth(), target.getDate(), 16);
-}
-
-export function getPreviousFriday4PM(): string {
-  const now = new Date();
-  const day = now.getDay();
-  const daysSinceFriday = (day - 5 + 7) % 7 || 7;
-  const target = new Date(now);
-  target.setDate(now.getDate() - daysSinceFriday);
-  return etDateAt(target.getFullYear(), target.getMonth(), target.getDate(), 16);
-}
-
-const DAY_INDEX: Record<string, number> = {
-  Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6,
-};
-
-export function getWednesdayBefore(testDay: string): string {
-  const targetDow = DAY_INDEX[testDay] ?? 5;
-  const now = new Date();
-  const today = now.getDay();
-  // Find next occurrence of test day
-  const daysUntilTest = (targetDow - today + 7) % 7 || 7;
-  const test = new Date(now);
-  test.setDate(now.getDate() + daysUntilTest);
-  // Walk back to Wednesday before that test
-  const back = (test.getDay() - 3 + 7) % 7 || 7;
-  const wed = new Date(test);
-  wed.setDate(test.getDate() - back);
-  return etDateAt(wed.getFullYear(), wed.getMonth(), wed.getDate(), 16);
 }
