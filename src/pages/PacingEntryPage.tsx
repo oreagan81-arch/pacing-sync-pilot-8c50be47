@@ -1,18 +1,16 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Save, RefreshCw, Zap, Sheet, Loader2 } from 'lucide-react';
+import { Save, Zap, Sheet, Loader2, CalendarDays } from 'lucide-react';
 import PasteImportDialog from '@/components/PasteImportDialog';
+import { DaySubjectCard, type DayCellData } from '@/components/pacing/DaySubjectCard';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useConfig } from '@/lib/config';
 import { evaluateWeekRisk } from '@/lib/risk-engine';
+import type { ContentMapEntry } from '@/lib/auto-link';
 
 const SUBJECTS = ['Math', 'Reading', 'Spelling', 'Language Arts', 'History', 'Science'] as const;
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as const;
@@ -96,6 +94,17 @@ export default function PacingEntryPage({
   const [sheetLoading, setSheetLoading] = useState(false);
   const [activeHsSubject, setActiveHsSubject] = useState<string>('Both');
   const [savedWeeks, setSavedWeeks] = useState<{ id: string; quarter: string; week_num: number }[]>([]);
+  const [contentMap, setContentMap] = useState<ContentMapEntry[]>([]);
+
+  // Load content_map for resource badges
+  useEffect(() => {
+    supabase
+      .from('content_map')
+      .select('lesson_ref, subject, canvas_url, canonical_name')
+      .then(({ data }) => {
+        if (data) setContentMap(data as ContentMapEntry[]);
+      });
+  }, []);
 
   // Compute risk on every change
   useEffect(() => {
@@ -480,191 +489,99 @@ export default function PacingEntryPage({
         )}
       </div>
 
-      {/* Subject accordion sections */}
-      <Accordion type="multiple" defaultValue={SUBJECTS.map(String)}>
-        {SUBJECTS.map((subject) => {
-          const courseId = config?.courseIds[subject];
+      {/* Day × Subject grid */}
+      <div className="rounded-lg border border-border bg-card/30 overflow-x-auto">
+        <div className="min-w-[1100px]">
+          {/* Day header row */}
+          <div className="grid grid-cols-[120px_repeat(5,1fr)] gap-2 p-2 border-b border-border bg-muted/30 sticky top-0 z-10">
+            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              <CalendarDays className="h-3.5 w-3.5" />
+              Subject
+            </div>
+            {DAYS.map((day) => (
+              <div
+                key={day}
+                className="text-center text-xs font-bold uppercase tracking-wider text-muted-foreground"
+              >
+                {day}
+              </div>
+            ))}
+          </div>
 
-          return (
-            <AccordionItem key={subject} value={subject}>
-              <AccordionTrigger className="hover:no-underline">
-                <div className="flex items-center gap-3">
-                  <div className="h-3 w-3 rounded-full" style={{ backgroundColor: quarterColor }} />
-                  <span className="font-bold text-base">{subject}</span>
+          {/* Subject rows */}
+          {SUBJECTS.map((subject) => {
+            const courseId = config?.courseIds[subject];
+            const prefix = config?.assignmentPrefixes[subject] ?? '';
+            const isHsBlocked =
+              !!config?.autoLogic.historyScienceNoAssign &&
+              (subject === 'History' || subject === 'Science');
+            // Hide non-active H/S row if user pinned one
+            if (
+              activeHsSubject !== 'Both' &&
+              ((subject === 'History' && activeHsSubject === 'Science') ||
+                (subject === 'Science' && activeHsSubject === 'History'))
+            ) {
+              return null;
+            }
+            return (
+              <div
+                key={subject}
+                className="grid grid-cols-[120px_repeat(5,1fr)] gap-2 p-2 border-b border-border/50 last:border-b-0"
+              >
+                {/* Subject label cell */}
+                <div className="flex flex-col justify-center gap-1 px-2">
+                  <span className="text-sm font-bold leading-tight">{subject}</span>
                   {courseId && (
-                    <Badge variant="outline" className="text-[10px] font-mono">
-                      {courseId}
-                    </Badge>
+                    <span className="text-[9px] font-mono text-muted-foreground">
+                      Course {courseId}
+                    </span>
                   )}
                   {isTestWeek(subject) && (
-                    <Badge variant="destructive" className="text-[10px]">
-                      TEST WEEK
-                    </Badge>
+                    <span className="inline-flex items-center w-fit rounded bg-warning/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-warning">
+                      Test Week
+                    </span>
                   )}
-                  {subject === 'Math' && (() => {
-                    const mondayLesson = weekData.Math.Monday.lesson_num;
-                    const pu = getPowerUp(mondayLesson);
-                    return pu ? (
-                      <Badge className="text-[10px] bg-accent text-accent-foreground">
-                        Power Up {pu}
-                      </Badge>
-                    ) : null;
-                  })()}
+                  {subject === 'Math' &&
+                    (() => {
+                      const mondayLesson = weekData.Math.Monday.lesson_num;
+                      const pu = getPowerUp(mondayLesson);
+                      return pu ? (
+                        <span className="inline-flex items-center w-fit rounded bg-accent px-1.5 py-0.5 text-[9px] font-bold text-accent-foreground">
+                          Power Up {pu}
+                        </span>
+                      ) : null;
+                    })()}
                 </div>
-              </AccordionTrigger>
-              <AccordionContent>
-                <div className="grid grid-cols-5 gap-3">
-                  {DAYS.map((day) => {
-                    const cell = weekData[subject][day];
-                    const isFriday = day === 'Friday';
-                    const isNoAssignSubject =
-                      config?.autoLogic.historyScienceNoAssign &&
-                      (subject === 'History' || subject === 'Science');
-                    const isLABlocked =
-                      subject === 'Language Arts' && !isLanguageArtsAssignable(cell.type);
-                    const hideAssign = isFriday || isNoAssignSubject;
-                    const isEven = cell.lesson_num ? parseInt(cell.lesson_num) % 2 === 0 : null;
 
-                    // Conditional styling based on cell content
-                    const cellText = cell.in_class?.toLowerCase() || '';
-                    const isTest = cellText.includes('test');
-                    const isReview = cellText.includes('review');
-                    const cardStyle: React.CSSProperties = isTest
-                      ? { backgroundColor: '#fde047' }
-                      : isReview
-                      ? { backgroundColor: '#f3f4f6' }
-                      : {};
-
-                    return (
-                      <Card key={day} className="shadow-sm" style={cardStyle}>
-                        <CardHeader className="p-3 pb-2">
-                          <CardTitle className="text-xs font-bold">{day}</CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-3 pt-0 space-y-2">
-                          <Select
-                            value={cell.type}
-                            onValueChange={(v) => updateCell(subject, day, 'type', v)}
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue placeholder="Type" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {(SUBJECT_TYPES[subject] || ['Lesson', 'Test', '-']).map((t) => (
-                                <SelectItem key={t} value={t}>
-                                  {t}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-
-                          <Input
-                            placeholder="Lesson #"
-                            value={cell.lesson_num}
-                            onChange={(e) => updateCell(subject, day, 'lesson_num', e.target.value)}
-                            className="h-8 text-xs"
-                          />
-
-                          <Textarea
-                            placeholder="In Class"
-                            value={cell.in_class}
-                            onChange={(e) => updateCell(subject, day, 'in_class', e.target.value)}
-                            className={`text-xs min-h-[60px] border-l-2 ${isTest ? 'font-bold text-red-600' : ''}`}
-                            style={{ borderLeftColor: '#0065a7' }}
-                            rows={2}
-                          />
-
-                          {isFriday ? (
-                            <div className="text-[10px] italic text-muted-foreground border-l-2 border-l-muted pl-2 py-1">
-                              Friday — no At Home content
-                            </div>
-                          ) : (
-                            <Textarea
-                              placeholder="At Home"
-                              value={cell.at_home}
-                              onChange={(e) => updateCell(subject, day, 'at_home', e.target.value)}
-                              className="text-xs min-h-[60px] border-l-2"
-                              style={{ borderLeftColor: '#c87800' }}
-                              rows={2}
-                            />
-                          )}
-
-                          <Input
-                            placeholder="Resources"
-                            value={cell.resources}
-                            onChange={(e) => updateCell(subject, day, 'resources', e.target.value)}
-                            className="h-8 text-xs border-l-2"
-                            style={{ borderLeftColor: '#6644bb' }}
-                          />
-
-                          {!hideAssign && (
-                            <div className="flex items-center gap-2">
-                              <Checkbox
-                                checked={(isFriday && !isTest) || isLABlocked ? false : cell.create_assign}
-                                disabled={(isFriday && !isTest) || isLABlocked}
-                                onCheckedChange={(v) =>
-                                  updateCell(subject, day, 'create_assign', !!v)
-                                }
-                                id={`assign-${subject}-${day}`}
-                              />
-                              <label
-                                htmlFor={`assign-${subject}-${day}`}
-                                className="text-[10px] text-muted-foreground"
-                                title={
-                                  isLABlocked
-                                    ? 'LA — only CP and Test create assignments'
-                                    : isFriday && !isTest
-                                    ? 'Friday — assignments disabled (Tests OK)'
-                                    : undefined
-                                }
-                              >
-                                Create Assign
-                                {isLABlocked
-                                  ? ' (CP/Test only)'
-                                  : isFriday && !isTest
-                                  ? ' (Friday locked)'
-                                  : ''}
-                              </label>
-                            </div>
-                          )}
-
-                          {/* Smart badges */}
-                          <div className="flex flex-wrap gap-1">
-                            {subject === 'Math' && isEven !== null && (
-                              <Badge variant="outline" className="text-[9px]">
-                                {isEven ? 'Evens' : 'Odds'}
-                              </Badge>
-                            )}
-                            {subject === 'Math' && cell.type === 'Test' && (
-                              <Badge variant="outline" className="text-[9px]">
-                                3 assignments
-                              </Badge>
-                            )}
-                            {subject === 'Reading' && cell.type === 'Test' && (
-                              <Badge variant="outline" className="text-[9px]">
-                                tracking+tapping
-                              </Badge>
-                            )}
-                            {hideAssign && cell.type && cell.type !== '-' && cell.type !== 'No Class' && (
-                              <Badge variant="secondary" className="text-[9px]">
-                                No Assignment
-                              </Badge>
-                            )}
-                            {isLABlocked && cell.type && cell.type !== '-' && cell.type !== 'No Class' && (
-                              <Badge variant="secondary" className="text-[9px]">
-                                No Assignment
-                              </Badge>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          );
-        })}
-      </Accordion>
+                {/* 5 day cards */}
+                {DAYS.map((day) => {
+                  const cell = weekData[subject][day];
+                  const isLaBlocked =
+                    subject === 'Language Arts' && !isLanguageArtsAssignable(cell.type);
+                  return (
+                    <DaySubjectCard
+                      key={day}
+                      subject={subject}
+                      day={day}
+                      cell={cell}
+                      prefix={prefix}
+                      isFriday={day === 'Friday'}
+                      isHsBlocked={isHsBlocked}
+                      isLaBlocked={isLaBlocked}
+                      availableTypes={SUBJECT_TYPES[subject] ?? ['Lesson', 'Test', '-']}
+                      contentMap={contentMap}
+                      subjectAccent="hsl(var(--primary))"
+                      onChange={(field, value) =>
+                        updateCell(subject, day, field as keyof typeof cell, value)
+                      }
+                    />
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
