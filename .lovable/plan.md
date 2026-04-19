@@ -1,65 +1,22 @@
 
-## Audit: 20-File Request vs Existing Repo
+The previous user message about scope/hooks/tables was already approved and implemented in earlier turns. The most recent actionable request was the Canvas hardening audit, where items 1+2 are now done. There is no new work to plan from this duplicate approval.
 
-Your prompt's first rule is **"DO NOT REBUILD EXISTING APP SHELL"** — but the 20-file list largely duplicates what already ships. Honest accounting:
+Re-stating recent state to confirm: 10 additive files shipped (QuickStats, UpcomingPosts, FileRenameCard, ConfidenceMeter, AnnouncementPreview, useCanvas, useAnnouncements, useTeacherMemory, types/thales.ts, DashboardPage edit), and hardening items 1+2 (drift assertion + URL normalization in canvas-deployer) are deployed.
 
-### Already exist (different names)
-| Requested | Existing |
-|---|---|
-| PagesCenterPage | `PageBuilderPage` |
-| AssignmentsCenterPage | `AssignmentsPage` |
-| FileCenterPage | `FileOrganizerPage` |
-| TeacherMemoryPage | `MemoryPage` |
-| SystemHealthPage | `HealthMonitorPage` |
-| canvasService | `lib/canvas-html.ts` + `lib/edge.ts` |
-| contentEngine | `lib/assignment-build.ts` + `lib/announcement-templates.ts` |
-| fileEngine | `supabase/functions/canvas-file-rename` + `file-classify` |
-| deploy_queue / system_logs | `automation_jobs` / `deploy_log` |
-| settings table | `system_config` |
+## Next available hardening work (pick to implement)
 
-### Already exist (same name)
-DashboardPage, AnnouncementCenterPage, SettingsPage, every requested DB table except `deploy_queue` / `system_logs`.
+**Item 3 — Announcement double-post guard** (`canvas-post-announcement`)
+- Add ET-time check: Friday posts only allowed if `type='reminder'` AND hour ≥ 16
+- Add idempotency: before POST, query `announcements` for matching `(week_id, subject, type)` with `posted_at IS NOT NULL` → return existing `canvasUrl` instead of re-posting
 
-### Genuinely missing
-1. `src/components/dashboard/QuickStats.tsx`
-2. `src/components/dashboard/UpcomingPosts.tsx`
-3. `src/components/files/FileRenameCard.tsx` (logic is currently inline)
-4. `src/components/memory/ConfidenceMeter.tsx` (rendered inline in MemoryPage)
-5. `src/components/announcements/AnnouncementPreview.tsx` (inline in AnnouncementCenterPage)
-6. `src/hooks/useCanvas.ts` — React Query wrappers around `callEdge`
-7. `src/hooks/useAnnouncements.ts` — list / draft / post / schedule
-8. `src/hooks/useTeacherMemory.ts` — patterns / hits / log
-9. `src/types/thales.ts` — curated domain types (Subject, Day, BuiltAssignment, etc.) re-exported from existing modules
-10. `DashboardPage` upgrade: mount QuickStats + UpcomingPosts widgets
+**Item 4 — Page deploy precheck** (`canvas-deploy-page`)
+- Before PUT/POST, count `pacing_rows` for `weekId` where `create_assign=true` OR row contributes to page body
+- If zero deployable rows AND no synthetic content → log `BLOCKED` + return early
 
-### Should NOT do
-- Rename `PageBuilderPage` → `PagesCenterPage`: breaks `/page-builder` route, sidebar, all internal links
-- Add `deploy_queue` / `system_logs` tables: duplicates `automation_jobs` / `deploy_log` and forces dual-writes
-- Replace `lib/*` with new `services/*`: identical behavior, two import paths to maintain
-- Re-implement Friday cron, retry engine, three-layer enforcement, front-page guard, together logic — already shipped this session
+**Item 5 — files-sync retry resilience** (`canvas-files-sync`)
+- Wrap paginated GETs with the same `fetchWithRetry` already used in `canvas-deploy-assignment` (handles Canvas 429 + 5xx with exponential backoff)
 
-## Plan: Additive Build (10 net-new files, 1 edited)
+## Recommendation
+Do **item 3 first** — it closes a real double-post path (cron retry → duplicate parent announcement). Items 4 and 5 are defensive but lower-risk.
 
-**New files**
-- `src/components/dashboard/QuickStats.tsx` — pulls from `system_health_snapshots`, `pacing_rows`, `automation_jobs`. Cards: Pending Deploys, Failed Jobs, Orphan Files, Health Score.
-- `src/components/dashboard/UpcomingPosts.tsx` — `announcements` where `status='SCHEDULED'` ordered by `scheduled_post`. Subject color chips.
-- `src/components/files/FileRenameCard.tsx` — single-file rename row, props `{ file, onApprove, onSkip }`. Used by FileOrganizerPage refactor (non-breaking, opt-in).
-- `src/components/memory/ConfidenceMeter.tsx` — bar 0-1, color thresholds (red <0.4, amber 0.4-0.6, emerald ≥0.6) matching theme.
-- `src/components/announcements/AnnouncementPreview.tsx` — renders title + content + scheduled time + course chip; reusable in AnnouncementCenter and Dashboard.
-- `src/hooks/useCanvas.ts` — `useDeployPage`, `useDeployAssignment`, `useFilesSync` (React Query mutations wrapping `callEdge`).
-- `src/hooks/useAnnouncements.ts` — `useAnnouncementsList`, `useDraftAnnouncement`, `useScheduleAnnouncement`, `usePostNow`.
-- `src/hooks/useTeacherMemory.ts` — `useMemoryPatterns`, `useMemoryHits`, `useEditHistory`.
-- `src/types/thales.ts` — `Subject`, `Day`, `AssignmentType`, `PacingRow`, `BuiltAssignment`, `AnnouncementDraft`, `MemoryHit` re-exported from existing modules; single import surface.
-- *(no new migration — existing tables cover everything)*
-
-**Edited**
-- `src/pages/DashboardPage.tsx` — mount `<QuickStats />` and `<UpcomingPosts />`. Existing copy/structure preserved.
-
-## Subject Color Tokens
-Your prompt specifies Math=orange, Reading=blue, ELA=green, Science=purple, History=navy, Homeroom=gray. Current theme uses subject neutral chips. I'll add a `subjectColor(subject)` helper inside `types/thales.ts` returning Tailwind classes from the existing palette (`text-orange-400`, `text-blue-400`, etc.) — used by `UpcomingPosts`, `AnnouncementPreview`, future widgets.
-
-## Verify
-- Open `/` → see Pending Deploys, Failed Jobs, Orphan Files, Health Score; see next 5 scheduled announcements with subject colors
-- Open `/announcements` → preview component renders identically (visual parity)
-- Open `/memory` → confidence bars render with new color thresholds
-- TypeScript: zero new errors, all existing routes intact
+Tell me which to implement (3, 4, 5, or all three) and I'll switch to default mode and ship.
