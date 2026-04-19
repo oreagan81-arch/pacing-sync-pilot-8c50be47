@@ -15,6 +15,51 @@ export type Subject =
 
 export type Day = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday';
 
+/**
+ * Structured resource entry for a pacing cell.
+ * `label` is the friendly name shown to students.
+ * `url` is optional — when present, renders as a clickable/downloadable link.
+ */
+export interface Resource {
+  label: string;
+  url?: string;
+}
+
+/**
+ * Parse a stored resources string into Resource[].
+ * - Tries JSON first (new format).
+ * - Falls back to single { label } entry (legacy free-text rows, including "a,b,c").
+ * Returns [] for empty/null.
+ */
+export function parseResources(raw: string | null | undefined): Resource[] {
+  if (!raw) return [];
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter((r) => r && typeof r === 'object' && typeof r.label === 'string')
+          .map((r) => ({ label: r.label, url: typeof r.url === 'string' && r.url ? r.url : undefined }));
+      }
+    } catch {
+      /* fall through to legacy */
+    }
+  }
+  // Legacy: single string blob → one resource entry, label only.
+  return [{ label: trimmed }];
+}
+
+/**
+ * Serialize Resource[] for DB storage. Empty list → null (clears the column).
+ */
+export function serializeResources(list: Resource[]): string | null {
+  const cleaned = list.filter((r) => r.label.trim());
+  if (cleaned.length === 0) return null;
+  return JSON.stringify(cleaned.map((r) => ({ label: r.label.trim(), ...(r.url?.trim() ? { url: r.url.trim() } : {}) })));
+}
+
 export type AssignmentType =
   | 'Lesson'
   | 'CP'
