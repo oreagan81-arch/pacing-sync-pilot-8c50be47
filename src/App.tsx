@@ -102,8 +102,8 @@ const App = () => {
   useEffect(() => {
     loadConfig()
       .then(setConfig)
-      .catch((e) => setError(e.message));
-  }, []);
+      .catch((e) => setError(e instanceof Error ? e.message : String(e) || 'Unknown error'));
+  }, [setConfig]);
 
   if (error) {
     return (
@@ -114,7 +114,7 @@ const App = () => {
           <button
             onClick={() => {
               setError(null);
-              loadConfig().then(setConfig).catch((e) => setError(e.message));
+              loadConfig().then(setConfig).catch((e) => setError(e instanceof Error ? e.message : String(e) || 'Unknown error'));
             }}
             className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold"
           >
