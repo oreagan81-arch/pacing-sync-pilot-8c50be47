@@ -3,8 +3,9 @@ import { listPages, getPage } from '../_shared/canvas-api.ts';
 import { getCourseIds } from '../_shared/canvas-courses.ts';
 
 function getCorsHeaders(origin?: string) {
+  const allowedOrigins = ['https://thalesacademy.instructure.com', 'https://another-allowed-origin.com'];
   return {
-    'Access-Control-Allow-Origin': origin === 'https://thalesacademy.instructure.com' ? origin : 'false',
+    'Access-Control-Allow-Origin': allowedOrigins.includes(origin || '') ? origin : 'false',
     'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   };
