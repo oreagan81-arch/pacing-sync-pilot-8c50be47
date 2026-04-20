@@ -9,6 +9,7 @@ export interface ReadingTestContext {
   lessonNum?: string | null;
   /** Phrases pulled from system_config.auto_logic.readingTestPhrases */
   readingTestPhrases: string[];
+  fluencyBenchmark?: { label: string; wpm: number; errors: number };
 }
 
 export interface SpellingTestContext {
@@ -25,7 +26,7 @@ export interface CombinedTestContext {
 
 /**
  * Reading test announcement body. Auto-injects required assessment phrases:
- * tracking and tapping + 100 words per minute.
+ * tracking and tapping. Uses dynamic fluency benchmarks.
  */
 export function renderReadingTestBody(ctx: ReadingTestContext): string {
   const lessonLine = ctx.lessonNum
@@ -34,13 +35,17 @@ export function renderReadingTestBody(ctx: ReadingTestContext): string {
 
   const phrases = ctx.readingTestPhrases.length
     ? ctx.readingTestPhrases
-    : ['tracking and tapping', '100 words per minute'];
+    : ['tracking and tapping'];
 
   const phraseList = phrases.map((p) => `<strong>${p}</strong>`).join(' and ');
 
+  const fluencyLabel = ctx.fluencyBenchmark?.label 
+    ? `The goal of this fluency check is to read ${ctx.fluencyBenchmark.label}. ` 
+    : '';
+
   return [
     lessonLine,
-    `<p>Students will be assessed on ${phraseList}. Please practice nightly.</p>`,
+    `<p>Students will be assessed on ${phraseList}. ${fluencyLabel}Please practice nightly.</p>`,
   ].join('\n');
 }
 
