@@ -46,22 +46,7 @@ export interface CanvasFile {
   updated_at?: string;
 }
 
-async function fetchWithRetry(url: string, init?: RequestInit, attempt = 0): Promise<Response> {
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${TOKEN}`,
-      Accept: 'application/json',
-      ...(init?.headers ?? {}),
-    },
-  });
-  if ((res.status === 429 || res.status >= 500) && attempt < 3) {
-    const wait = [1000, 4000, 12000][attempt];
-    await new Promise((r) => setTimeout(r, wait));
-    return fetchWithRetry(url, init, attempt + 1);
-  }
-  return res;
-}
+import { fetchWithRetry } from "./fetch-retry";
 
 function parseNextLink(linkHeader: string | null): string | null {
   if (!linkHeader) return null;

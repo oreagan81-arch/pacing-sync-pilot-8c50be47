@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 // @ts-ignore: Type declaration for esm.sh
+import { fetchWithRetry } from "../_shared/fetch-retry";
 
 function getCorsHeaders(origin?: string) {
   const allowedOrigins = ["https://thalesacademy.instructure.com", "https://example.com"];

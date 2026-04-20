@@ -17,13 +17,7 @@ import { expandSpellingTest } from '@/lib/together-logic';
 import { getReadingFluencyBenchmark } from '@/lib/reading-fluency';
 import { TOGETHER_LOGIC_COURSE_ID, getCourseId } from '@/lib/course-ids';
 import { logEdit, learnFromEdit, logDeployHabit } from '@/lib/teacher-memory';
-import {
-  getNextFriday4PM,
-  getPreviousFriday4PM,
-  getWednesdayBefore,
-  getOneWeekBefore,
-  getTwoDaysBefore,
-} from '@/lib/date-utils';
+import { getNextFriday4PM } from '../../supabase/functions/_shared/date-utils';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types

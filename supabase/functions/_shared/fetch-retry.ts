@@ -4,6 +4,8 @@
  * Canonical backoff: [1000, 4000, 12000]ms (aligned with AWS/Canvas defaults)
  */
 
+// This is the canonical fetchWithRetry implementation for all edge functions.
+
 export async function fetchWithRetry(
   url: string,
   init?: RequestInit,
