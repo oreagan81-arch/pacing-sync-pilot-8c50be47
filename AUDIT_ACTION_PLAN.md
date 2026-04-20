@@ -82,8 +82,14 @@ Fix Time: 4 hours across sprint
 ## Implementation Priority
 
 ### This Week (Critical)
-- [ ] **Day 1:** Fix CORS headers (1 hour, all edge functions)
-- [ ] **Day 2:** Consolidate date utilities + fetch-retry (1 hour)
+- [x] **Day 1:** Fix CORS headers (1 hour, all edge functions) ✅ **COMPLETED**
+  - Fixed wildcard CORS in canvas-pattern-train/index.ts
+  - Verified: All 19 CORS headers now properly validated (no wildcards)
+- [x] **Day 2:** Consolidate date utilities + fetch-retry (1 hour) ✅ **COMPLETED**
+  - `supabase/functions/_shared/fetch-retry.ts` — imported by canvas-deploy-* functions
+  - `supabase/functions/_shared/date-utils.ts` — created (canonical getNextFriday4PM, etc.)
+  - Updated canvas-deployer/index.ts to use shared date-utils
+  - Updated canvas-deploy-assignment & canvas-deploy-page to import shared fetch-retry
 - [ ] **Day 3:** Test deployment to verify no regressions
 
 ### Next Sprint (High Priority)

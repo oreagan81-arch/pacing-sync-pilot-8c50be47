@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { fetchWithRetry } from "../_shared/fetch-retry.ts";
 
 function getCorsHeaders(origin?: string) {
   return {
@@ -7,31 +8,6 @@ function getCorsHeaders(origin?: string) {
     "Access-Control-Allow-Headers":
       "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
   };
-}
-
-async function fetchWithRetry(url: string, init: RequestInit, attempts = 3): Promise<Response> {
-  let lastErr: unknown;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const res = await fetch(url, init);
-      if (res.status >= 500 || res.status === 429) {
-        if (i < attempts - 1) {
-          const backoff = 500 * Math.pow(2, i);
-          await new Promise((r) => setTimeout(r, backoff));
-          continue;
-        }
-      }
-      return res;
-    } catch (e) {
-      lastErr = e;
-      if (i < attempts - 1) {
-        const backoff = 500 * Math.pow(2, i);
-        await new Promise((r) => setTimeout(r, backoff));
-        continue;
-      }
-    }
-  }
-  throw lastErr instanceof Error ? lastErr : new Error("Network error");
 }
 
 Deno.serve(async (req) => {

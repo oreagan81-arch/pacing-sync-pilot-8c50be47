@@ -4,6 +4,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { getNextFriday4PM } from "./_shared/date-utils.ts";
 
 function getCorsHeaders(origin?: string) {
   return {
@@ -458,7 +459,7 @@ ${dailyBlocks}
         const announcementHtml = this.generateAnnouncementHtml(row);
         // Together subjects: single merged announcement
         const targetSubject = this.isTogether(row.subject) ? "Reading" : row.subject;
-        const delayedPost = getNextFriday4PM(row.date);
+        const delayedPost = getNextFriday4PM();
 
         await this.createAnnouncement(
           targetSubject,
@@ -479,16 +480,6 @@ ${dailyBlocks}
 
     return results;
   }
-}
-
-// ── Utilities ─────────────────────────────────────────────────
-function getNextFriday4PM(dateStr: string): string {
-  const date = new Date(dateStr);
-  const day = date.getDay();
-  const daysUntilFriday = (5 - day + 7) % 7 || 7;
-  date.setDate(date.getDate() + daysUntilFriday);
-  date.setHours(16, 0, 0, 0);
-  return date.toISOString();
 }
 
 // ── Risk Evaluation ───────────────────────────────────────────

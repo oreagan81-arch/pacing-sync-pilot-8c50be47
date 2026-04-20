@@ -1,11 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { getCourseIds, subjectForCourseId } from '../_shared/canvas-courses.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-
 interface Snapshot {
   course_id: number;
   content_type: string;
@@ -67,6 +62,11 @@ function dayOfWeek(iso?: string | null): number | null {
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 Deno.serve(async (req) => {
+  const origin = req.headers.get('origin') || '';
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': origin === 'https://thalesacademy.instructure.com' ? origin : 'false',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   try {
     const sb = createClient(

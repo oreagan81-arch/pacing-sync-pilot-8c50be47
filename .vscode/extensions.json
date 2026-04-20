@@ -8,6 +8,8 @@
         "ms-vscode.vscode-typescript-next",
         "esbenp.prettier-vscode",
         "dbaeumer.vscode-eslint",
-        "eamodio.gitlens"
+        "eamodio.gitlens",
+        "continue.continue",
+        "google.geminicodeassist"
     ]
 }

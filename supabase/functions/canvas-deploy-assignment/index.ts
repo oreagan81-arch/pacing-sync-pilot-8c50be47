@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { fetchWithRetry } from "../_shared/fetch-retry.ts";
 
 function getCorsHeaders(origin?: string) {
   return {
@@ -38,26 +39,6 @@ function toDueAt(dateStr: string): string {
   const offset = `${sign}${hours}:00`;
   const local = new Date(`${dateStr}T23:59:00${offset}`);
   return local.toISOString();
-}
-
-async function fetchWithRetry(url: string, init: RequestInit, attempts = 3): Promise<Response> {
-  let lastErr: Error | null = null;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const res = await fetch(url, init);
-      if (res.status >= 500 || res.status === 429) {
-        if (i < attempts - 1) {
-          await new Promise((r) => setTimeout(r, 400 * Math.pow(2, i)));
-          continue;
-        }
-      }
-      return res;
-    } catch (e) {
-      lastErr = e as Error;
-      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 400 * Math.pow(2, i)));
-    }
-  }
-  throw lastErr ?? new Error('fetchWithRetry exhausted');
 }
 
 Deno.serve(async (req) => {
