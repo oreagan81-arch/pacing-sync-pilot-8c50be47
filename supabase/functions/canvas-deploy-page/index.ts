@@ -1,10 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { fetchWithRetry } from "../_shared/fetch-retry.ts";
+// @ts-ignore: Type declaration for esm.sh
 
 function getCorsHeaders(origin?: string) {
   const allowedOrigins = ["https://thalesacademy.instructure.com", "https://example.com"];
   return {
-    "Access-Control-Allow-Origin": allowedOrigins.includes(origin || "") ? origin : "false",
+    "Access-Control-Allow-Origin": allowedOrigins.includes(origin || "") ? origin || "" : "https://example.com",
     "Access-Control-Allow-Credentials": "true",
     "Access-Control-Allow-Headers":
       "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",

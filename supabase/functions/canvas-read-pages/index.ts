@@ -1,11 +1,12 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+// @ts-ignore: Type declaration for esm.sh
 import { listPages, getPage } from '../_shared/canvas-api.ts';
 import { getCourseIds } from '../_shared/canvas-courses.ts';
 
 function getCorsHeaders(origin?: string) {
   const allowedOrigins = ['https://thalesacademy.instructure.com', 'https://another-allowed-origin.com'];
   return {
-    'Access-Control-Allow-Origin': allowedOrigins.includes(origin || '') ? origin : 'false',
+    'Access-Control-Allow-Origin': allowedOrigins.includes(origin || '') ? origin || '' : 'https://another-allowed-origin.com',
     'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   };
