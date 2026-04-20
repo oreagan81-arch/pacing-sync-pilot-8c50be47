@@ -51,19 +51,23 @@ export function resolveAssignmentGroup(subject: string, type: string): Assignmen
 
   switch (subject) {
     case 'Math':
-      if (type === 'Study Guide') return { groupName: 'Homework/Class Work', points: 0, gradingType: 'points', omitFromFinal: true };
-      if (type === 'Fact Test') return { groupName: 'Fact Assessments', points: 100, gradingType: 'points', omitFromFinal: false };
-      if (isTest) return { groupName: 'Written Assessments', points: 100, gradingType: 'points', omitFromFinal: false };
-      return { groupName: 'Homework/Class Work', points: 100, gradingType: 'points', omitFromFinal: false };
+      if (type === 'Study Guide') return { groupName: 'Homework/Class Work', points: 100, gradingType: 'percent', omitFromFinal: true };
+      if (type === 'Fact Test') return { groupName: 'Fact Assessments', points: 100, gradingType: 'percent', omitFromFinal: false };
+      if (isTest) return { groupName: 'Written Assessments', points: 100, gradingType: 'percent', omitFromFinal: false };
+      return { groupName: 'Homework/Class Work', points: 100, gradingType: 'percent', omitFromFinal: false };
     case 'Reading':
-      if (isTest) return { groupName: 'Assessments', points: 100, gradingType: 'points', omitFromFinal: false };
-      if (type === 'Checkout') return { groupName: 'Check Out', points: 100, gradingType: 'points', omitFromFinal: false };
-      return { groupName: 'Homework', points: 100, gradingType: 'points', omitFromFinal: false };
+      if (isTest) return { groupName: 'Assessments', points: 100, gradingType: 'percent', omitFromFinal: false };
+      if (type === 'Checkout') return { groupName: 'Check Out', points: 100, gradingType: 'percent', omitFromFinal: false };
+      return { groupName: 'Homework', points: 100, gradingType: 'percent', omitFromFinal: false };
+    case 'Spelling':
+      // Spelling tests go in Reading's Assessment bucket
+      if (isTest) return { groupName: 'Assessments', points: 100, gradingType: 'percent', omitFromFinal: false };
+      return { groupName: 'Homework', points: 100, gradingType: 'percent', omitFromFinal: false };
     case 'Language Arts':
-      if (isTest) return { groupName: 'Assessments', points: 100, gradingType: 'points', omitFromFinal: false };
-      return { groupName: 'Classwork/Homework', points: 100, gradingType: 'points', omitFromFinal: false };
+      if (isTest) return { groupName: 'Assessments', points: 100, gradingType: 'percent', omitFromFinal: false };
+      return { groupName: 'Classwork/Homework', points: 100, gradingType: 'percent', omitFromFinal: false };
     default:
-      return { groupName: 'Assignments', points: 100, gradingType: 'points', omitFromFinal: false };
+      return { groupName: 'Assignments', points: 100, gradingType: 'percent', omitFromFinal: false };
   }
 }
 

@@ -8,6 +8,16 @@ import { applyBrevity } from './assignment-logic';
 import { injectFileLinks, injectAssignmentLink, type ContentMapEntry } from './auto-link';
 import { COURSE_IDS } from './course-ids';
 
+// Subject-specific student book mappings for 25-26 template (always included in resources)
+const STUDENT_BOOKS: Record<string, string> = {
+  Math: 'Math Student Book',
+  Reading: 'Reading Book',
+  Spelling: 'Spelling Book',
+  'Language Arts': 'Language Arts Student Book',
+  History: 'History Textbook',
+  Science: 'Science Textbook',
+};
+
 export interface RedirectPageParams {
   thisSubject: 'History' | 'Science';
   activeSubject: 'History' | 'Science';
@@ -140,20 +150,47 @@ export function generateCanvasPageHtml(params: CanvasPageParams): string {
         <p class="kl_subtitle" style="color: #888888; font-size: 0.85em; margin-top: -4px;"><em>Last updated: ${formatLastUpdated()}</em></p>
     </div>`);
 
-  // 2. REMINDERS (omit if empty)
+  // 2. REMINDERS (always show with enhanced content for 25-26 template)
+  // Collect lessons and tests from this week
+  const lessons = rows
+    .filter(r => r.lesson_num && r.lesson_num.trim())
+    .map(r => r.lesson_num)
+    .filter((v, i, a) => a.indexOf(v) === i); // unique
+  const hasTests = rows.some(r => r.type === 'Test' || (r.in_class || '').toLowerCase().includes('test'));
+  
+  let reminderItems = '';
   if (reminders && reminders.trim()) {
-    const items = reminders.split('\n').filter(Boolean).map(
+    // Use custom reminders if provided
+    reminderItems = reminders.split('\n').filter(Boolean).map(
       (r) => `        <p style="line-height: 1.5;">${r.trim()}</p>`
     ).join('\n');
-    parts.push(`    <div id="kl_custom_block_0" class="">
+  } else if (lessons.length > 0 && !hasTests) {
+    // Auto-generate reminder with current lesson info when no tests
+    const lessonList = lessons.join(', ');
+    reminderItems = `        <p style="line-height: 1.5;"><strong>This week we're studying:</strong> ${lessonList}</p>\n        <p style="line-height: 1.5;">Check Canvas daily for updates and assignments.</p>`;
+  } else if (hasTests) {
+    // If there are tests, remind about upcoming ones
+    reminderItems = `        <p style="line-height: 1.5;"><strong>Test scheduled this week!</strong> Come prepared and review all materials.</p>\n        <p style="line-height: 1.5;">Check Canvas for upcoming test dates next week.</p>`;
+  } else {
+    reminderItems = `        <p style="line-height: 1.5;">Check Canvas daily for updates and announcements.</p>`;
+  }
+  
+  parts.push(`    <div id="kl_custom_block_0" class="">
         <h3 class="" style="background-color: #c51062; color: #ffffff; border-color: #c51062;"><i class="fas fa-exclamation" aria-hidden="true"><span class="dp-icon-content" style="display: none;">&nbsp;</span></i>Reminders</h3>
-${items}
+${reminderItems}
         <p>&nbsp;</p>
     </div>`);
-  }
 
-  // 3. RESOURCES — aggregated from per-day rows + week metadata
+  // 3. RESOURCES — always show with student book for 25-26 template
   const allResources: string[] = [];
+  
+  // Always add subject's student book first
+  const studentBook = STUDENT_BOOKS[subject];
+  if (studentBook) {
+    allResources.push(studentBook);
+  }
+  
+  // Add aggregated resources from per-day rows + week metadata
   for (const row of rows) {
     if (row.resources && row.resources.trim()) {
       row.resources.split('\n').filter(Boolean).forEach((r) => {
@@ -169,14 +206,13 @@ ${items}
     });
   }
 
-  if (allResources.length > 0) {
-    const items = allResources.map(renderResourceLine).filter(Boolean).join('\n');
-    parts.push(`    <div id="kl_custom_block_5" class="">
+  // Always show resources section (guaranteed to have student book)
+  const resourceItems = allResources.map(renderResourceLine).filter(Boolean).join('\n');
+  parts.push(`    <div id="kl_custom_block_5" class="">
         <h3 style="background-color: #00c0a5; color: #ffffff; border-color: #00c0a5;"><i class="fas fa-question" aria-hidden="true"><span class="dp-icon-content" style="display: none;">&nbsp;</span></i>Resources</h3>
-${items}
+${resourceItems}
         <p>&nbsp;</p>
     </div>`);
-  }
 
   // 4. DAILY BLOCKS
   for (const day of DAYS_ORDER) {
