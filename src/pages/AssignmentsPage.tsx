@@ -33,6 +33,7 @@ import {
 import type { ContentMapEntry } from '@/lib/auto-link';
 import { logDeployHabit } from '@/lib/teacher-memory';
 import { validateDeployment, type ValidationResult } from '@/lib/pre-deploy-validator';
+import { useDeployAssignments } from '@/hooks/useDeployAssignments';
 
 const SUBJECTS = ['Math', 'Reading', 'Spelling', 'Language Arts', 'History', 'Science'];
 const FILTER_CHIPS = ['All', 'Math', 'Reading', 'Language Arts', 'Spelling'];
@@ -76,6 +77,7 @@ export default function AssignmentsPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<string>('All');
   const [deployResults, setDeployResults] = useState<Record<string, DeployStatus>>({});
+  const deployAssignments = useDeployAssignments();
 
   useRealtimeDeploy();
 
@@ -228,60 +230,9 @@ export default function AssignmentsPage() {
   };
 
   const handleDeploy = async () => {
-    setDeploying(true);
     const targets = previewRows.filter((r) => selected.has(r.rowKey));
-    const results: Record<string, DeployStatus> = {};
-    let ok = 0, fail = 0, skip = 0;
-
-    for (const r of targets) {
-      try {
-        const res = await callEdge<{ status?: string; canvasUrl?: string; error?: string }>(
-          'canvas-deploy-assignment',
-          {
-            subject: r.subject,
-            courseId: r.courseId,
-            title: r.title,
-            description: r.description,
-            points: r.points,
-            gradingType: r.gradingType,
-            assignmentGroup: r.assignmentGroup,
-            dueDate: r.dueDate || undefined,
-            omitFromFinal: r.omitFromFinal,
-            existingId: r.canvasUrl ? r.canvasUrl.split('/').pop() : undefined,
-            rowId: r.rowId || undefined,
-            weekId: weekId || undefined,
-            contentHash: r.contentHash,
-            day: r.day,
-            type: r.type,
-            isSynthetic: r.isSynthetic,
-          },
-        );
-        if (res.status === 'DEPLOYED') {
-          results[r.rowKey] = 'DEPLOYED'; ok++;
-          void logDeployHabit(r.subject);
-        }
-        else if (res.status === 'NO_CHANGE') { results[r.rowKey] = 'NO_CHANGE'; skip++; }
-        else { results[r.rowKey] = 'ERROR'; fail++; }
-      } catch {
-        results[r.rowKey] = 'ERROR'; fail++;
-      }
-    }
-
-    setDeployResults((prev) => ({ ...prev, ...results }));
-    if (fail === 0 && skip === 0) toast.success(`Deployed ${ok} assignments to Canvas`);
-    else if (fail === 0) toast.success(`Deployed ${ok}, skipped ${skip} unchanged`);
-    else toast.warning(`Deployed ${ok}, skipped ${skip}, failed ${fail}`);
-
-    setDeploying(false);
+    await deployAssignments.mutateAsync(targets);
     setSelected(new Set());
-    // Refresh DB rows to pick up new canvas_assignment_id + hashes
-    if (weekId) {
-      const { data: rows } = await supabase
-        .from('pacing_rows')
-        .select('id, subject, day, type, lesson_num, content_hash, canvas_assignment_id, canvas_url')
-        .eq('week_id', weekId);
-      setPacingDbRows((rows as PacingDbRow[]) || []);
-    }
   };
 
   const statusBadge = (s: DeployStatus) => {
@@ -495,7 +446,9 @@ export default function AssignmentsPage() {
                                 </div>
                                 <div
                                   className="text-sm prose prose-sm max-w-none [&_a]:text-primary [&_a]:underline"
-                                  dangerouslySetInnerHTML={{ __html: row.description }}
+import { sanitizeHtml } from '@/lib/sanitize';
+// ... existing code ...
+                                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(row.description) }}
                                 />
                                 <div className="mt-3 text-[10px] font-mono text-muted-foreground">
                                   hash: {row.contentHash.slice(0, 12)}…

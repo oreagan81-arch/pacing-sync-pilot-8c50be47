@@ -70,7 +70,9 @@ export function CanvasPreviewModal({
               {isHtmlContent ? (
                 <div
                   className="prose dark:prose-invert max-w-none"
-                  dangerouslySetInnerHTML={{ __html: editedContent }}
+import { sanitizeHtml } from '@/lib/sanitize';
+// ... existing code ...
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(editedContent) }}
                 />
               ) : (
                 <pre className="text-sm text-slate-300 overflow-x-auto">

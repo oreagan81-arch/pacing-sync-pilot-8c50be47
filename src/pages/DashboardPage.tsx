@@ -147,7 +147,7 @@ export default function DashboardPage({
 
     setStats({
       announcements: annResult.count || 0,
-      pages: weekSummary?.pendingCount || 0,
+      pages: pending,
       files: fileResult.count || 0,
     });
 

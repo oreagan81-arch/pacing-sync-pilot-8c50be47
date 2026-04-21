@@ -5,6 +5,27 @@ import { evaluateWeekRisk } from '@/lib/risk-engine';
 import { toast } from 'sonner';
 import type { ContentMapEntry } from '@/lib/auto-link';
 
+interface Week {
+  id: string;
+  quarter: string;
+  week_num: number;
+  date_range: string | null;
+  reminders: string | null;
+  resources: string | null;
+  active_hs_subject: string | null;
+}
+
+interface PacingRow {
+    subject: string;
+    day: string;
+    type: string | null;
+    lesson_num: string | null;
+    in_class: string | null;
+    at_home: string | null;
+    resources: string | null;
+    create_assign: boolean;
+}
+
 const SUBJECTS = ['Math', 'Reading', 'Spelling', 'Language Arts', 'History', 'Science'] as const;
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as const;
 
@@ -51,12 +72,12 @@ export function usePacingEntry(
   const [saving, setSaving] = useState(false);
   const [sheetLoading, setSheetLoading] = useState(false);
   const [activeHsSubject, setActiveHsSubject] = useState<string>('Both');
-  const [savedWeeks, setSavedWeeks] = useState<{ id: string; quarter: string; week_num: number }[]>([]);
+  const [savedWeeks, setSavedWeeks] = useState<Week[]>([]);
   const [contentMap, setContentMap] = useState<ContentMapEntry[]>([]);
 
   useEffect(() => {
-    supabase.from('content_map').select('lesson_ref,subject,canvas_url,canonical_name')
-      .then(({ data }) => { if (data) setContentMap(data as ContentMapEntry[]); });
+    supabase.from('content_map').select('lesson_ref,subject,canvas_url,canonical_name').returns<ContentMapEntry[]>()
+      .then(({ data }) => { if (data) setContentMap(data); });
   }, []);
 
   useEffect(() => {
@@ -74,7 +95,7 @@ export function usePacingEntry(
   }, [weekData, config, setRiskLevel, setRiskScore]);
 
   useEffect(() => {
-    supabase.from('weeks').select('id,quarter,week_num').order('quarter').order('week_num')
+    supabase.from('weeks').select('id,quarter,week_num').order('quarter').order('week_num').returns<Week[]>()
       .then(({ data }) => { if (data) setSavedWeeks(data); });
   }, []);
 
@@ -113,7 +134,7 @@ export function usePacingEntry(
       if (rowsErr) throw new Error(rowsErr.message);
 
       toast.success('Week saved!');
-      const { data: updated } = await supabase.from('weeks').select('id, quarter, week_num').order('quarter').order('week_num');
+      const { data: updated } = await supabase.from('weeks').select('id, quarter, week_num').order('quarter').order('week_num').returns<Week[]>();
       if (updated) setSavedWeeks(updated);
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Unknown error';
@@ -130,15 +151,15 @@ export function usePacingEntry(
     setActiveWeek(week.week_num);
 
     const [{ data: weekData2 }, { data: rows }] = await Promise.all([
-      supabase.from('weeks').select('*').eq('id', weekId).single(),
-      supabase.from('pacing_rows').select('*').eq('week_id', weekId),
+      supabase.from('weeks').select('*').eq('id', weekId).returns<Week>().single(),
+      supabase.from('pacing_rows').select('*').eq('week_id', weekId).returns<PacingRow[]>(),
     ]);
 
     if (weekData2) {
       setDateRange(weekData2.date_range || '');
       setReminders(weekData2.reminders || '');
       setResources(weekData2.resources || '');
-      setActiveHsSubject((weekData2 as any).active_hs_subject as string || 'Both');
+      setActiveHsSubject(weekData2.active_hs_subject || 'Both');
     }
 
     if (rows) {
@@ -155,11 +176,16 @@ export function usePacingEntry(
     }
 
     if (showToast) toast.success(`Loaded ${week.quarter} Week ${week.week_num}`);
-  }, [savedWeeks, setActiveQuarter, setActiveWeek]);
+  }, [setActiveQuarter, setActiveWeek]);
 
   useEffect(() => {
     const matchingWeek = savedWeeks.find((week) => week.quarter === activeQuarter && week.week_num === activeWeek);
-    if (matchingWeek) void loadWeekById(matchingWeek.id, false);
+    if (matchingWeek) {
+      loadWeekById(matchingWeek.id, false).catch((err) => {
+        console.error('Failed to auto-load week data', err);
+        toast.error('Failed to auto-load week data');
+      });
+    }
   }, [savedWeeks, activeQuarter, activeWeek, loadWeekById]);
 
   const handleSheetImport = async () => {

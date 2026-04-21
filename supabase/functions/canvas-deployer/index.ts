@@ -3,17 +3,19 @@
 // Handles: Assignments, Agenda Pages, Announcements, Front Page Protection
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { getNextFriday4PM } from "../_shared/date-utils";
+import { createSupabaseAdmin } from "../_shared/supabase-client.ts";
+import { getNextFriday4PM } from "../_shared/date-utils.ts";
+import { corsHeaders } from "../_shared/cors.ts";
+import { handleError } from "../_shared/response-handler.ts";
 
-function getCorsHeaders(origin?: string) {
-  return {
-    "Access-Control-Allow-Origin": origin === "https://thalesacademy.instructure.com" ? origin : "false",
-    "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Headers":
-      "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-  };
-}
+serve(async (req) => {
+  try {
+    const supabaseAdmin = createSupabaseAdmin();
+    // ... existing code ...
+  } catch (error) {
+    return handleError(error);
+  }
+});
 
 // ─── Course Routing ───────────────────────────────────────────
 const COURSE_IDS: Record<string, number> = {

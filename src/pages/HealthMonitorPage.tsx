@@ -55,9 +55,12 @@ export default function HealthMonitorPage() {
 
   // Realtime subscription with connection status
   useEffect(() => {
+    let isMounted = true;
+
     const channel = supabase
       .channel('deploy-log-realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'deploy_log' }, (payload) => {
+        if (!isMounted) return;
         const newEntry = payload.new as DeployLogEntry;
         setLogs(prev => {
           const updated = [newEntry, ...prev].slice(0, 100);
@@ -65,7 +68,6 @@ export default function HealthMonitorPage() {
           return updated;
         });
         
-        // Flash toast for new events
         const label = [newEntry.action?.replace(/_/g, ' '), newEntry.subject].filter(Boolean).join(' \u2014 ');
         if (newEntry.status === 'DEPLOYED') {
           toast.success(label, { description: newEntry.message || undefined });
@@ -74,9 +76,15 @@ export default function HealthMonitorPage() {
         }
       })
       .subscribe((status) => {
-        setConnected(status === 'SUBSCRIBED');
+        if (isMounted) {
+          setConnected(status === 'SUBSCRIBED');
+        }
       });
-    return () => { supabase.removeChannel(channel); };
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const statusIcon = (status: string | null) => {

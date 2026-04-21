@@ -21,6 +21,7 @@ import { Brain, Trash2, Pencil, ChevronDown, ChevronRight, Check, X, TrendingUp 
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { getMemoryHitStats } from '@/lib/teacher-memory';
+import { Json } from '@/types/thales';
 
 interface MemoryRow {
   id: string;
@@ -68,13 +69,13 @@ export default function MemoryPage() {
   const loadAll = async () => {
     setLoading(true);
     const [m, f, p] = await Promise.all([
-      supabase.from('teacher_memory').select('*').order('confidence', { ascending: false }),
-      supabase.from('teacher_feedback_log').select('*').order('created_at', { ascending: false }).limit(100),
-      supabase.from('teacher_patterns').select('*').gte('confidence', 0.5).order('confidence', { ascending: false }),
+      supabase.from('teacher_memory').select('*').order('confidence', { ascending: false }).returns<MemoryRow[]>(),
+      supabase.from('teacher_feedback_log').select('*').order('created_at', { ascending: false }).limit(100).returns<FeedbackRow[]>(),
+      supabase.from('teacher_patterns').select('*').gte('confidence', 0.5).order('confidence', { ascending: false }).returns<PatternRow[]>(),
     ]);
-    setMemories((m.data ?? []) as MemoryRow[]);
-    setFeedback((f.data ?? []) as FeedbackRow[]);
-    setPatterns((p.data ?? []) as PatternRow[]);
+    setMemories(m.data ?? []);
+    setFeedback(f.data ?? []);
+    setPatterns(p.data ?? []);
     setLoading(false);
   };
 
@@ -105,7 +106,7 @@ export default function MemoryPage() {
     }
     const { error } = await supabase
       .from('teacher_memory')
-      .update({ value: parsed as unknown as never })
+      .update({ value: parsed as Json })
       .eq('id', editing.id);
     if (error) return toast.error('Save failed: ' + error.message);
     toast.success('Memory updated');
@@ -126,7 +127,7 @@ export default function MemoryPage() {
     const { error } = await supabase.from('teacher_memory').insert({
       category: p.pattern_type,
       key: p.subject ?? 'global',
-      value: p.rule as unknown as never,
+      value: p.rule as Json,
       confidence: p.confidence,
       usage_count: p.applied_count,
     });

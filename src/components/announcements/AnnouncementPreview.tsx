@@ -61,7 +61,9 @@ export function AnnouncementPreview({ announcement, className }: AnnouncementPre
       <CardContent className="pt-0">
         <div
           className="prose prose-invert prose-sm max-w-none text-xs text-foreground/90 [&_p]:my-1 [&_ul]:my-1"
-          dangerouslySetInnerHTML={{ __html: announcement.content || '<em class="text-muted-foreground">No content</em>' }}
+          import { sanitizeHtml } from '@/lib/sanitize';
+// ... existing code ...
+          dangerouslySetInnerHTML={{ __html: sanitizeHtml(announcement.content) || '<em class="text-muted-foreground">No content</em>' }}
         />
       </CardContent>
     </Card>

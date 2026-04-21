@@ -166,8 +166,8 @@ export default function FileOrganizerPage() {
     await supabase.from('files').update(update).eq('id', id);
     if (file) {
       const after = { ...file, ...update };
-      void logEdit('file', id, before as never, after as never, 'rename');
-      void learnFromEdit('file', before as never, after as never);
+      logEdit('file', id, before as never, after as never, 'rename').catch(console.error);
+      learnFromEdit('file', before as never, after as never).catch(console.error);
     }
     loadFiles();
   };

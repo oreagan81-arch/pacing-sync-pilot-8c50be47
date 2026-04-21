@@ -48,7 +48,7 @@ export default function AutomationPage() {
   const [running, setRunning] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     const [{ data: j }, { data: f }] = await Promise.all([
       supabase.from('automation_jobs').select('*').order('job_name'),
@@ -61,16 +61,16 @@ export default function AutomationPage() {
     setJobs((j ?? []) as Job[]);
     setFailures((f ?? []) as FailureRow[]);
     setLoading(false);
-  }
+  }, []);
 
   useEffect(() => {
     load();
     const ch = supabase
       .channel('automation-jobs-rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'automation_jobs' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'automation_jobs' }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, []);
+  }, [load]);
 
   async function runNow(jobName: string) {
     setRunning((p) => ({ ...p, [jobName]: true }));

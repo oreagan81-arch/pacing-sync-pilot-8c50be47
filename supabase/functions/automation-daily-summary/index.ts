@@ -6,6 +6,22 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const JOB_NAME = 'automation-daily-summary';
 
+interface PacingRow {
+  subject: string;
+  type: string | null;
+  lesson_num: string | null;
+}
+
+interface HealthSnapshot {
+  score: number;
+  created_at: string;
+}
+
+interface TeacherMemory {
+  category: string;
+  key: string;
+}
+
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 Deno.serve(async (req) => {
@@ -16,10 +32,10 @@ Deno.serve(async (req) => {
     const today = DAYS[new Date().getDay()];
 
     const [{ data: rows }, { data: pending }, { data: snapshots }, { data: memories }] = await Promise.all([
-      sb.from('pacing_rows').select('subject, type, lesson_num').eq('day', today),
+      sb.from('pacing_rows').select('subject, type, lesson_num').eq('day', today).returns<PacingRow[]>(),
       sb.from('pacing_rows').select('id', { count: 'exact' }).eq('deploy_status', 'PENDING'),
-      sb.from('system_health_snapshots').select('score, created_at').order('created_at', { ascending: false }).limit(2),
-      sb.from('teacher_memory').select('category, key').gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()),
+      sb.from('system_health_snapshots').select('score, created_at').order('created_at', { ascending: false }).limit(2).returns<HealthSnapshot[]>(),
+      sb.from('teacher_memory').select('category, key').gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()).returns<TeacherMemory[]>(),
     ]);
 
     const tests = (rows ?? []).filter((r) => (r.type ?? '').toLowerCase().includes('test')).length;

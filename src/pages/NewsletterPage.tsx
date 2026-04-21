@@ -307,7 +307,9 @@ export default function NewsletterPage() {
               </CardHeader>
               <CardContent>
                 {previewMode === 'preview' ? (
-                  <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
+import { sanitizeHtml } from '@/lib/sanitize';
+// ... existing code ...
+                  <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(htmlContent) }} />
                 ) : (
                   <pre className="text-xs bg-slate-950 text-slate-100 p-4 rounded-lg overflow-auto max-h-[400px] whitespace-pre-wrap font-mono">
                     {htmlContent}
