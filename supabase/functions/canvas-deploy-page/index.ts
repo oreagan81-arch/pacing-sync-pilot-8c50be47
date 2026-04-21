@@ -21,6 +21,25 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // 1. Guard Clause: Verify Environment Variables
+const canvasToken = Deno.env.get('CANVAS_API_TOKEN');
+if (!canvasToken) {
+  console.error("CRITICAL: CANVAS_API_TOKEN is missing from environment variables.");
+  return new Response(
+    JSON.stringify({ error: "Server configuration error. Missing Canvas API token." }),
+    { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+  );
+}
+
+const supabaseUrl = Deno.env.get('SUPABASE_URL');
+const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+if (!supabaseUrl || !supabaseAnonKey) {
+   return new Response(
+    JSON.stringify({ error: "Server configuration error. Missing Database credentials." }),
+    { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+  );
+}
+
     const { subject, courseId, pageUrl, pageTitle, bodyHtml, published, setFrontPage, weekId, contentHash } = await req.json();
 
     if (!courseId || !pageUrl || !pageTitle || !bodyHtml) {
@@ -30,7 +49,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    const canvasToken = Deno.env.get("CANVAS_API_TOKEN");
     let canvasBase = Deno.env.get("CANVAS_BASE_URL") || "https://thalesacademy.instructure.com";
     if (!canvasBase.startsWith("http")) canvasBase = `https://${canvasBase}`;
     canvasBase = canvasBase.replace(/\/+$/, "");
@@ -41,7 +59,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const sb = createClient(supabaseUrl, supabaseKey);
 

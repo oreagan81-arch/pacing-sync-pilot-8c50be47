@@ -1,23 +1,18 @@
 import { create } from 'zustand';
 
-export interface PacingCell {
-  value: string;
-  lessonNum: string;
-  isTest: boolean;
-  isReview: boolean;
-  isNoClass: boolean;
-}
-
-export interface PacingData {
-  dates: string[];
-  subjects: Record<string, PacingCell[]>; // 5-item arrays (Mon-Fri)
-}
-
 interface SystemState {
-  selectedMonth: string;
-  selectedWeek: number;
-  pacingData: PacingData | null;
-  isLoading: boolean;
+  activeQuarter: string;
+  activeWeek: number;
+  setActiveQuarter: (quarter: string) => void;
+  setActiveWeek: (week: number) => void;
+}
+
+export const useSystemStore = create<SystemState>((set) => ({
+  activeQuarter: 'Q1', // Default, will be overridden by URL params later
+  activeWeek: 1,
+  setActiveQuarter: (quarter) => set({ activeQuarter: quarter }),
+  setActiveWeek: (week) => set({ activeWeek: week }),
+}));
   systemStatus: 'online' | 'offline' | 'checking';
 
   setSelectedMonth: (m: string) => void;
