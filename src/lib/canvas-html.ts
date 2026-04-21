@@ -6,7 +6,6 @@
 
 import { applyBrevity } from './assignment-logic';
 import { injectFileLinks, injectAssignmentLink, type ContentMapEntry } from './auto-link';
-import { COURSE_IDS } from './course-ids';
 import { parseResources, type Resource } from '@/types/thales';
 
 // Subject-specific student book mappings for 25-26 template (always included in resources)

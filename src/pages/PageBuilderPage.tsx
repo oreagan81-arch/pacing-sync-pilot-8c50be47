@@ -459,23 +459,9 @@ export default function PageBuilderPage() {
     if (s.status === 'ERROR') return <Badge variant="destructive" className="text-[10px]">ERROR</Badge>;
     return <Badge variant="outline" className="text-[10px]">{s.status}</Badge>;
   };
-
-  const [previewState, setPreviewState] = useState<{
-    isOpen: boolean;
-    title: string;
-    description: string;
-    html: string;
-    deployFn: (editedHtml: string) => void;
-  }>({
-    isOpen: false,
-    title: '',
-    description: '',
-    html: '',
-    deployFn: () => {},
-  });
-
-  return (
-    <>
+ 
+   return (
+     <>
       <div className="space-y-6 animate-in fade-in duration-300">
         <div className="flex items-center justify-between">
           <Select value={selectedWeekId} onValueChange={setSelectedWeekId}>

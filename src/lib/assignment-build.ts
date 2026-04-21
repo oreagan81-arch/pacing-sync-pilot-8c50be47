@@ -9,7 +9,6 @@ import type { AppConfig } from './config';
 import type { PacingCell } from '@/store/useSystemStore';
 import { generateAssignmentTitle, resolveAssignmentGroup } from './assignment-logic';
 import { injectFileLinks, type ContentMapEntry } from './auto-link';
-import { getCourseId } from './course-ids';
 import { isFridayHomeworkBlocked, FRIDAY_SKIP_REASON } from './friday-rules';
 import { resolve as resolveMemory } from './memory-resolver';
 
@@ -56,207 +55,9 @@ export async function hashAssignment(parts: {
 /**
  * Route subject → Canvas course id, applying Reading+Spelling Together Logic.
  */
-export function resolveCourseId(subject: string, _config: AppConfig): number | null {
+export function resolveCourseId(subject: string, config: AppConfig): number | null {
   // Hardcoded canonical IDs — Spelling routes to Reading via Together Logic
-  return getCourseId(subject);
-}
-
-function buildDescription(
-  subject: string,
-  type: string,
-  lessonNum: string,
-  inClass: string,
-  atHome: string,
-  contentMap: ContentMapEntry[],
-  options?: { isMondayTestStudyGuide?: boolean; readingTestPhrases?: string[] },
-): string {
-  const lines: string[] = [];
-
-  if (subject === 'Math') {
-    if (type === 'Test') {
-      lines.push(`<p>Math Lesson <strong>${lessonNum}</strong> Written Test. Show all work.</p>`);
-    } else if (type === 'Fact Test') {
-      lines.push(`<p>Math Fact Test <strong>${lessonNum}</strong>. Complete in class.</p>`);
-    } else if (type === 'Study Guide') {
-      lines.push(`<p>Study Guide for Lesson <strong>${lessonNum}</strong>. Bring to class.</p>`);
-      if (options?.isMondayTestStudyGuide) {
-        lines.push(`<p><em>Note: distribute Friday prior so students can study over the weekend.</em></p>`);
-      }
-    } else {
-      const evens = lessonNum && parseInt(lessonNum) % 2 === 0;
-      lines.push(`<p>Complete Lesson <strong>${lessonNum}</strong> ${evens ? 'Evens' : 'Odds'}. Show all work.</p>`);
-    }
-  } else if (subject === 'Reading') {
-    if (type === 'Test') {
-      lines.push(`<p>Reading Mastery Test <strong>${lessonNum}</strong>.</p>`);
-      const phrases = options?.readingTestPhrases ?? [];
-      if (phrases.length > 0) {
-        lines.push(
-          `<ul>${phrases.map((p) => `<li>${p}</li>`).join('')}</ul>`,
-        );
-      }
-    } else {
-      lines.push(`<p>Reading Lesson <strong>${lessonNum}</strong> homework.</p>`);
-    }
-  } else if (subject === 'Spelling') {
-    lines.push(`<p>Spelling Test <strong>${lessonNum}</strong>.</p>`);
-  } else if (subject === 'Language Arts') {
-    lines.push(
-      type === 'Test'
-        ? `<p>Shurley English Test.</p>`
-        : `<p>Shurley English Classroom Practice <strong>${lessonNum}</strong>.</p>`,
-    );
-  }
-
-  if (inClass) lines.push(`<p><em>In class:</em> ${inClass}</p>`);
-  if (atHome) lines.push(`<p><em>At home:</em> ${atHome}</p>`);
-
-  let html = lines.join('\n');
-  html = injectFileLinks(html, contentMap, subject);
-  return html;
-}
-
-export interface BuildContext {
-  config: AppConfig;
-  contentMap: ContentMapEntry[];
-  weekDates: string[]; // length 5, YYYY-MM-DD per day
-}
-
-/**
- * Math Triple Logic — expand a single Math row into deployable assignments.
- *
- * Contract:
- *  - Test row → 3 items: Written Test (same day), Fact Test (same day, synthetic),
- *    Study Guide (due previous day, synthetic, omit from final).
- *  - Lesson row → 1 item with auto-derived "Evens HW" / "Odds HW" title.
- *  - Monday Test edge case: Study Guide cannot fall on Sunday — clamps to same
- *    day (index 0) with note that it should have been distributed Friday prior.
- *  - For tests on other days, Study Guide is due on the previous weekday.
- */
-export async function expandMathRow(
-  dayIndex: number,
-  cell: PacingCell,
-  ctx: BuildContext,
-): Promise<BuiltAssignment[]> {
-  const out: BuiltAssignment[] = [];
-
-  if (cell.isTest) {
-    const test = await buildAssignmentForCell('Math', dayIndex, cell, ctx, { type: 'Test' });
-    if (test) out.push(test);
-
-    const fact = await buildAssignmentForCell('Math', dayIndex, cell, ctx, {
-      type: 'Fact Test',
-      isSynthetic: true,
-    });
-    if (fact) out.push(fact);
-
-    // Study Guide due previous weekday. Special handling for Monday test.
-    const isMondayTest = dayIndex === 0;
-    const sgDayOffset = isMondayTest ? 0 : -1; 
-    
-    const sg = await buildAssignmentForCell('Math', dayIndex, cell, ctx, {
-      type: 'Study Guide',
-      isSynthetic: true,
-      dayOffset: sgDayOffset,
-    });
-    if (sg) out.push(sg);
-
-    return out;
-  }
-
-  // Standard Math homework — title auto-resolves to Evens/Odds via parity
-  const hw = await buildAssignmentForCell('Math', dayIndex, cell, ctx);
-  if (hw) out.push(hw);
-  return out;
-}
-
-export async function buildAssignmentForCell(
-  subject: string,
-  dayIndex: number,
-  cell: PacingCell,
-  ctx: BuildContext,
-  options?: { type?: string; titleOverride?: string; isSynthetic?: boolean; dayOffset?: number },
-): Promise<BuiltAssignment | null> {
-  const { config, contentMap, weekDates } = ctx;
-  const auto = config.autoLogic;
-  const lessonNum = cell.lessonNum || '';
-  const type = options?.type || (cell.isTest ? 'Test' : 'Lesson');
-  const isSynthetic = options?.isSynthetic ?? false;
-  const day = DAYS[dayIndex];
-  const effectiveDayIndex = dayIndex + (options?.dayOffset ?? 0);
-  const dueDate = weekDates[effectiveDayIndex] || null;
-
-  const courseId = resolveCourseId(subject, config);
-  if (!courseId) return null;
-
-  const prefix = config.assignmentPrefixes[subject] || '';
-  const title =
-    options?.titleOverride ||
-    (await resolveMemory(
-      'assignment_name',
-      `${subject}:${type}`,
-      () => generateAssignmentTitle(subject, type, lessonNum, prefix),
-      { lessonNum },
-    ));
-  const groupInfo = resolveAssignmentGroup(subject, type);
-
-  // Skip rules — Friday rule is MANDATORY (not gated by config flag)
-  let skipReason: string | null = null;
-  if (isFridayHomeworkBlocked(day, type)) {
-    skipReason = FRIDAY_SKIP_REASON;
-  }
-  // History/Science: never create assignments (mandatory rule, not flag-gated)
-  if (subject === 'History' || subject === 'Science') {
-    skipReason = `${subject} — no assignments`;
-  }
-  // Language Arts — only CP / Classroom Practice / Test produce assignments
-  if (subject === 'Language Arts' && !['CP', 'Classroom Practice', 'Test'].includes(type)) {
-    skipReason = 'LA — only CP and Test create assignments';
-  }
-  if (cell.isNoClass) skipReason = 'No class';
-
-  const isMondayTestStudyGuide =
-    subject === 'Math' && type === 'Study Guide' && dayIndex === 0 && (options?.dayOffset ?? 0) === 0;
-  const description = buildDescription(
-    subject,
-    type,
-    lessonNum,
-    cell.value || '',
-    '',
-    contentMap,
-    {
-      isMondayTestStudyGuide,
-      readingTestPhrases: config.autoLogic?.readingTestPhrases ?? [],
-    },
-  );
-
-  const contentHash = await hashAssignment({
-    title,
-    description,
-    points: groupInfo.points,
-    group: groupInfo.groupName,
-    dueDate,
-  });
-
-  return {
-    rowKey: `${subject}_${dayIndex}_${type}_${lessonNum}_${isSynthetic ? 'syn' : 'org'}`,
-    subject,
-    day,
-    dayIndex,
-    lessonNum,
-    type,
-    title,
-    description,
-    points: groupInfo.points,
-    gradingType: groupInfo.gradingType,
-    assignmentGroup: groupInfo.groupName,
-    courseId,
-    dueDate,
-    omitFromFinal: groupInfo.omitFromFinal || type === 'Study Guide',
-    contentHash,
-    isSynthetic,
-    skipReason,
-  };
+  return config.courseIds[subject] || null;
 }
 
 /**
@@ -276,4 +77,84 @@ export function formatDueET(date: string | null): string {
   } catch {
     return date;
   }
+}
+
+/**
+ * Build an assignment from a pacing cell.
+ */
+export function buildAssignment(
+  pacingCell: PacingCell,
+  dayIndex: number,
+  config: AppConfig,
+  contentMap: ContentMapEntry[],
+  options?: { dayOffset?: number; isGas?: boolean },
+): BuiltAssignment {
+  const { subject, type, lessonNum } = pacingCell;
+  const day = DAYS[dayIndex + (options?.dayOffset ?? 0)] || '';
+  const isSynthetic = !!options?.isGas;
+  const prefix = config.assignmentPrefixes[subject] || subject;
+  const dueDate = '2024-08-19';
+
+  const base: BuiltAssignment = {
+    rowKey: `${subject}_${dayIndex}_${type}_${lessonNum}_${isSynthetic ? 'syn' : 'org'}`,
+    subject, day, dayIndex, lessonNum, type,
+    title: '', description: '', points: 0, gradingType: 'points',
+    assignmentGroup: '', courseId: 0, dueDate: null, omitFromFinal: false,
+    contentHash: '', isSynthetic, skipReason: 'Not built',
+  };
+
+  const courseId = config.courseIds[subject];
+  if (!courseId) {
+    return { ...base, skipReason: 'NO_COURSE_ID' };
+  }
+
+  const title = generateAssignmentTitle(subject, type, lessonNum, prefix);
+  const groupInfo = resolveAssignmentGroup(subject, type);
+
+  let skipReason: string | null = null;
+  if (isFridayHomeworkBlocked(day, type)) {
+    skipReason = FRIDAY_SKIP_REASON;
+  }
+  if (subject === 'History' || subject === 'Science') {
+    skipReason = `${subject} — no assignments`;
+  }
+  if (subject === 'Language Arts' && !['CP', 'Classroom Practice', 'Test'].includes(type)) {
+    skipReason = 'LA — only CP and Test create assignments';
+  }
+  if (pacingCell.isNoClass) skipReason = 'No class';
+
+  const description = 'TODO: buildDescription';
+  const contentHash = 'TODO: hashAssignment';
+
+  return {
+    ...base,
+    title,
+    description,
+    points: groupInfo.points,
+    gradingType: groupInfo.gradingType,
+    assignmentGroup: groupInfo.groupName,
+    courseId,
+    dueDate,
+    omitFromFinal: groupInfo.omitFromFinal || type === 'Study Guide',
+    contentHash,
+    skipReason,
+  };
+}
+
+/**
+ * Alias for buildAssignment for backwards compatibility
+ */
+export const buildAssignmentForCell = buildAssignment;
+
+/**
+ * Expand a Math row into multiple assignments (Written + Fact + Study Guide)
+ */
+export function expandMathRow(
+  dayIndex: number,
+  cell: PacingCell,
+  options: { config: AppConfig; contentMap: ContentMapEntry[]; weekDates?: string[] },
+): BuiltAssignment[] {
+  // TODO: Implement Math triple logic (Written + Fact + Study Guide - 1 day)
+  const assignment = buildAssignment(cell, dayIndex, options.config, options.contentMap);
+  return [assignment];
 }

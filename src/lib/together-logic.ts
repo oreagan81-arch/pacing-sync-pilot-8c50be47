@@ -7,7 +7,6 @@
  *  - Announcements: ONE shared weekly parent announcement to course 21919
  *  - Assignments: separate Reading + Spelling assignments, both routed to 21919
  */
-import { TOGETHER_LOGIC_COURSE_ID, getCourseId } from './course-ids';
 
 export const TOGETHER_SUBJECTS = ['Reading', 'Spelling'] as const;
 export type TogetherSubject = (typeof TOGETHER_SUBJECTS)[number];

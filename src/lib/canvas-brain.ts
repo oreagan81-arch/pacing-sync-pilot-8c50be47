@@ -1,5 +1,4 @@
 import { supabase } from '@/integrations/supabase/client';
-import { COURSE_IDS } from './course-ids';
 
 export interface SnapshotStats {
   total: number;

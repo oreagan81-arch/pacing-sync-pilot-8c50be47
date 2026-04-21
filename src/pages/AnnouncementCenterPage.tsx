@@ -11,9 +11,10 @@ import { callEdge } from '@/lib/edge';
 import { useRealtimeDeploy } from '@/hooks/use-realtime-deploy';
 import { expandSpellingTest } from '@/lib/together-logic';
 import { getReadingFluencyBenchmark } from '@/lib/reading-fluency';
-import { getNextFriday4PM } from '../../supabase/functions/_shared/date-utils';
 import AnnouncementTable from '@/components/announcements/AnnouncementTable';
 import AnnouncementForm from '@/components/announcements/AnnouncementForm';
+import { buildMathEarlyHtml, buildMathUrgentHtml, buildReadingSpellingHtml, buildSubjectTestHtml, buildSubjectSummaryHtml, buildHomeroomHtml } from '@/lib/announcement-templates';
+import { getOneWeekBefore, getTwoDaysBefore, getNextFriday4PM } from '@/lib/date-utils';
 
 // Assuming these types are moved to a central types file
 interface Announcement {
@@ -97,23 +98,23 @@ export default function AnnouncementCenterPage() {
   }, [selectedWeekId]);
   useRealtimeDeploy(handleRealtimeEvent);
 
-  useEffect(() => {
-    supabase.from('weeks').select('id, quarter, week_num').order('quarter').order('week_num')
-      .then(({ data }) => { if (data) setWeeks(data); });
-  }, []);
-
-  const loadAnnouncements = async (weekId?: string) => {
+  const loadAnnouncements = useCallback(async (weekId?: string) => {
     setLoading(true);
     let query = supabase.from('announcements').select('*').order('created_at', { ascending: false });
     if (weekId) query = query.eq('week_id', weekId);
     const { data } = await query.limit(50);
     if (data) setAnnouncements(data as Announcement[]);
     setLoading(false);
-  };
+  }, []);
+
+  useEffect(() => {
+    supabase.from('weeks').select('id, quarter, week_num').order('quarter').order('week_num')
+      .then(({ data }) => { if (data) setWeeks(data); });
+  }, []);
 
   useEffect(() => {
     loadAnnouncements(selectedWeekId || undefined);
-  }, [selectedWeekId]);
+  }, [selectedWeekId, loadAnnouncements]);
 
   const handleAutoGenerate = async () => {
     if (!selectedWeekId || !config) {
