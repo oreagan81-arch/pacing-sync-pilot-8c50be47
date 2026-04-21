@@ -7,6 +7,7 @@
 import { applyBrevity } from './assignment-logic';
 import { injectFileLinks, injectAssignmentLink, type ContentMapEntry } from './auto-link';
 import { COURSE_IDS } from './course-ids';
+import { parseResources, type Resource } from '@/types/thales';
 
 // Subject-specific student book mappings for 25-26 template (always included in resources)
 const STUDENT_BOOKS: Record<string, string> = {
@@ -123,19 +124,14 @@ function formatLastUpdated(): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-// Resource line → <a> or text. Supports "Label | URL" pipe syntax.
-function renderResourceLine(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) return '';
-  const pipe = trimmed.split('|').map((s) => s.trim());
-  if (pipe.length === 2 && pipe[1].startsWith('http')) {
-    return `        <p style="line-height: 1.5;"><a href="${pipe[1]}" target="_blank">${pipe[0]}</a></p>`;
+// Resource → <a> or text.
+function renderResource(r: Resource): string {
+  const label = r.label.trim();
+  if (!label) return '';
+  if (r.url) {
+    return `        <li style="line-height: 1.5;"><a href="${r.url}" target="_blank">${label}</a></li>`;
   }
-  if (trimmed.startsWith('http')) {
-    const label = trimmed.split('/').pop() || 'Resource';
-    return `        <p style="line-height: 1.5;"><a href="${trimmed}" target="_blank">${label}</a></p>`;
-  }
-  return `        <p style="line-height: 1.5;">${trimmed}</p>`;
+  return `        <li style="line-height: 1.5;">${label}</li>`;
 }
 
 export function generateCanvasPageHtml(params: CanvasPageParams): string {
@@ -182,32 +178,38 @@ ${reminderItems}
     </div>`);
 
   // 3. RESOURCES — always show with student book for 25-26 template
-  const allResources: string[] = [];
+  const allResources: Resource[] = [];
   
   // Always add subject's student book first
   const studentBook = STUDENT_BOOKS[subject];
   if (studentBook) {
-    allResources.push(studentBook);
+    allResources.push({ label: studentBook });
   }
   
   // Add aggregated resources from per-day rows + week metadata
   for (const row of rows) {
     if (row.resources && row.resources.trim()) {
-      row.resources.split('\n').filter(Boolean).forEach((r) => {
-        const trimmed = r.trim();
-        if (!allResources.includes(trimmed)) allResources.push(trimmed);
-      });
+      const parsed = parseResources(row.resources);
+      for (const r of parsed) {
+        // Avoid duplicates by label
+        if (!allResources.some(existing => existing.label === r.label)) {
+          allResources.push(r);
+        }
+      }
     }
   }
+  // Legacy week-level resources (if any, treat as single entries)
   if (resources && resources.trim()) {
     resources.split('\n').filter(Boolean).forEach((r) => {
       const trimmed = r.trim();
-      if (!allResources.includes(trimmed)) allResources.push(trimmed);
+      if (!allResources.some(existing => existing.label === trimmed)) {
+        allResources.push({ label: trimmed });
+      }
     });
   }
 
   // Always show resources section (guaranteed to have student book)
-  const resourceItems = allResources.map(renderResourceLine).filter(Boolean).join('\n');
+  const resourceItems = allResources.length > 0 ? `<ul>\n${allResources.map(renderResource).filter(Boolean).join('\n')}\n        </ul>` : '';
   parts.push(`    <div id="kl_custom_block_5" class="">
         <h3 style="background-color: #00c0a5; color: #ffffff; border-color: #00c0a5;"><i class="fas fa-question" aria-hidden="true"><span class="dp-icon-content" style="display: none;">&nbsp;</span></i>Resources</h3>
 ${resourceItems}

@@ -15,28 +15,59 @@ export function PacingEntryGrid({
     weekData, contentMap, updateCell, isTestWeek, getPowerUp, SUBJECT_TYPES
 }: PacingEntryGridProps) {
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
-            {SUBJECTS.map((subject) => (
-                <div key={subject} className="space-y-4">
-                    <h2 className={`text-lg font-bold text-center ${isTestWeek(subject) ? 'text-yellow-400' : ''}`}>{subject}</h2>
-                    {DAYS.map((day) => {
-                        const cellData = weekData[subject]?.[day];
-                        if (!cellData) return null;
-                        return (
-                            <DaySubjectCard
-                                key={day}
-                                day={day}
-                                subject={subject}
-                                data={cellData}
-                                onUpdate={updateCell}
-                                subjectTypes={SUBJECT_TYPES[subject] || []}
-                                contentMap={contentMap}
-                                powerUp={getPowerUp(cellData.lesson_num)}
-                            />
-                        );
-                    })}
-                </div>
-            ))}
-        </div>
+        <>
+            {/* Desktop: grid layout */}
+            <div className="hidden md:grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+                {SUBJECTS.map((subject) => (
+                    <div key={subject} className="space-y-4">
+                        <h2 className={`text-lg font-bold text-center ${isTestWeek(subject) ? 'text-yellow-400' : ''}`}>{subject}</h2>
+                        {DAYS.map((day) => {
+                            const cellData = weekData[subject]?.[day];
+                            if (!cellData) return null;
+                            return (
+                                <DaySubjectCard
+                                    key={day}
+                                    day={day}
+                                    subject={subject}
+                                    data={cellData}
+                                    onUpdate={updateCell}
+                                    subjectTypes={SUBJECT_TYPES[subject] || []}
+                                    contentMap={contentMap}
+                                    powerUp={getPowerUp(cellData.lesson_num)}
+                                />
+                            );
+                        })}
+                    </div>
+                ))}
+            </div>
+
+            {/* Mobile: stacked subjects with horizontal scrolling days */}
+            <div className="md:hidden space-y-6">
+                {SUBJECTS.map((subject) => (
+                    <div key={subject} className="space-y-4">
+                        <h2 className={`text-lg font-bold ${isTestWeek(subject) ? 'text-yellow-400' : ''}`}>{subject}</h2>
+                        <div className="flex gap-4 overflow-x-auto snap-x pb-2">
+                            {DAYS.map((day) => {
+                                const cellData = weekData[subject]?.[day];
+                                if (!cellData) return null;
+                                return (
+                                    <div key={day} className="flex-shrink-0 w-64 snap-start">
+                                        <DaySubjectCard
+                                            day={day}
+                                            subject={subject}
+                                            data={cellData}
+                                            onUpdate={updateCell}
+                                            subjectTypes={SUBJECT_TYPES[subject] || []}
+                                            contentMap={contentMap}
+                                            powerUp={getPowerUp(cellData.lesson_num)}
+                                        />
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </>
     );
 }
