@@ -273,7 +273,7 @@ ${resourceItems}
 
     // AT HOME — only if there's homework and it's not Friday
     if (hasAtHome) {
-      let atHomeText = row.at_home!.trim();
+      let atHomeText = (row.at_home || '').trim();
       atHomeText = injectFileLinks(atHomeText, contentMap, row.subject);
       dayHtml += `
         <p>&nbsp;</p>

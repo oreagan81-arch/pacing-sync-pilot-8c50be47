@@ -131,6 +131,7 @@ export interface BuildContext {
  *  - Lesson row → 1 item with auto-derived "Evens HW" / "Odds HW" title.
  *  - Monday Test edge case: Study Guide cannot fall on Sunday — clamps to same
  *    day (index 0) with note that it should have been distributed Friday prior.
+ *  - For tests on other days, Study Guide is due on the previous weekday.
  */
 export async function expandMathRow(
   dayIndex: number,
@@ -149,12 +150,14 @@ export async function expandMathRow(
     });
     if (fact) out.push(fact);
 
-    // Study Guide due previous weekday. If Monday Test, clamp to same day.
-    const sgOffset = dayIndex > 0 ? -1 : 0;
+    // Study Guide due previous weekday. Special handling for Monday test.
+    const isMondayTest = dayIndex === 0;
+    const sgDayOffset = isMondayTest ? 0 : -1; 
+    
     const sg = await buildAssignmentForCell('Math', dayIndex, cell, ctx, {
       type: 'Study Guide',
       isSynthetic: true,
-      dayOffset: sgOffset,
+      dayOffset: sgDayOffset,
     });
     if (sg) out.push(sg);
 

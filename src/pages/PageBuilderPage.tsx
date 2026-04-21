@@ -20,6 +20,7 @@ import {
 } from '@/lib/together-logic';
 import { logDeployHabit } from '@/lib/teacher-memory';
 import { StyleSuggestions } from '@/components/canvas-brain/StyleSuggestions';
+import { CanvasPreviewModal } from '@/components/CanvasPreviewModal';
 
 const PAGE_SUBJECTS = ['Math', 'Reading', 'Language Arts', 'History', 'Science', 'Homeroom'] as const;
 const DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -62,7 +63,29 @@ export default function PageBuilderPage() {
   const [diffOpen, setDiffOpen] = useState(false);
   const { selectedMonth, selectedWeek: storeWeek, pacingData, fetchPacingData } = useSystemStore();
 
-  const handleRealtimeEvent = useCallback((event: any) => {
+  // Filter subjects that have rows and are deployable
+  const deployableSubjects = useMemo(() => {
+    return PAGE_SUBJECTS.filter(subject => {
+      const subjectSpecificRows = filterTogetherPageRows(rows, subject);
+      return subjectSpecificRows.length > 0;
+    });
+  }, [rows]);
+  
+  const [previewState, setPreviewState] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    html: string;
+    deployFn: (editedHtml: string) => void;
+  }>({
+    isOpen: false,
+    title: '',
+    description: '',
+    html: '',
+    deployFn: () => {},
+  });
+
+  const handleRealtimeEvent = useCallback((event: { action: string, subject: string, status?: string, canvas_url?: string }) => {
     if (event.action === 'page_deploy' && event.subject) {
       setDeployStatuses((prev) => ({
         ...prev,
@@ -234,6 +257,9 @@ export default function PageBuilderPage() {
   const handleDeploy = async (subject: string) => {
     if (!selectedWeek || !config) return;
 
+    setDeployingAll(false);
+    toast.info('Deploying subject...');
+
     let sRows: CanvasPageRow[] = [];
     let html = '';
     let courseId: number | undefined;
@@ -276,103 +302,146 @@ export default function PageBuilderPage() {
       } else {
         sRows = filterTogetherPageRows(rows, subject);
 
-        if (sRows.length === 0) {
-          toast.error(`No data for ${subject}`);
-          return;
+        if (sRows.length > 0) {
+          courseId = resolveTogetherCourseId(subject) ?? config.courseIds[subject];
+          html = generateCanvasPageHtml({
+            subject: subject === 'Reading' ? 'Reading & Spelling' : subject,
+            rows: sRows,
+            quarter: selectedWeek.quarter,
+            weekNum: selectedWeek.week_num,
+            dateRange: selectedWeek.date_range || '',
+            reminders: selectedWeek.reminders || '',
+            resources: selectedWeek.resources || '',
+            quarterColor,
+            contentMap,
+          });
         }
-
-        courseId = resolveTogetherCourseId(subject) ?? config.courseIds[subject];
-
-        html = generateCanvasPageHtml({
-          subject: subject === 'Reading' ? 'Reading & Spelling' : subject,
-          rows: sRows,
-          quarter: selectedWeek.quarter,
-          weekNum: selectedWeek.week_num,
-          dateRange: selectedWeek.date_range || '',
-          reminders: selectedWeek.reminders || '',
-          resources: selectedWeek.resources || '',
-          quarterColor,
-          contentMap,
-        });
       }
     }
 
-    if (!courseId) {
-      toast.error(`No course ID configured for ${subject}`);
-      return;
-    }
-
-    setDeploying((p) => ({ ...p, [subject]: true }));
-
-    try {
-      const contentHash = await sha256Hex(html);
-      const result = await callEdge<{ status?: string; canvasUrl?: string; error?: string }>('canvas-deploy-page', {
-        subject,
-        courseId,
-        pageUrl: pageSlug,
-        pageTitle,
-        bodyHtml: html,
-        published: true,
-        setFrontPage: true,
-        weekId: selectedWeekId || null,
-        contentHash,
-      });
-
-      if (result.status === 'DEPLOYED' || result.status === 'NO_CHANGE') {
-        setDeployStatuses((p) => ({ ...p, [subject]: { status: result.status!, canvasUrl: result.canvasUrl } }));
-        if (result.status === 'DEPLOYED') void logDeployHabit(subject);
-        toast.success(`${subject} agenda ${result.status === 'NO_CHANGE' ? 'up to date' : 'deployed & set as homepage'}`, {
-          action: result.canvasUrl ? { label: 'Open', onClick: () => window.open(result.canvasUrl, '_blank') } : undefined,
+    if (courseId && html) {
+      try {
+        await logDeployHabit('page', subject, html);
+        const hash = await sha256Hex(html);
+        const res: DeployResult = await callEdge('canvas-deploy-page', {
+          subject,
+          courseId,
+          pageUrl: pageSlug,
+          pageTitle,
+          bodyHtml: html,
+          published: config.autoLogic.pagePublishDefault,
+          setFrontPage: true,
+          weekId: selectedWeek.id,
+          contentHash: hash,
         });
-      } else {
-        throw new Error(result.error || 'Unknown error');
+
+        if (res.status === 'SKIPPED') {
+          toast.info(`${subject} page skipped`, { description: 'Content has not changed.' });
+        } else if (res.status === 'DEPLOYED' || res.status === 'REPAIRED') {
+          toast.success(`${subject} page deployed`);
+        } else {
+          throw new Error(res.error || 'Unknown error');
+        }
+      } catch (e: any) {
+        toast.error(`Failed to deploy ${subject}`, { description: e.message });
+      } finally {
+        setDeploying({ ...deploying, [subject]: false });
+        setPreviewState(prev => ({ ...prev, isOpen: false }));
       }
-    } catch (e: any) {
-      toast.error(`Deploy failed — ${subject}`, { description: e.message });
-      setDeployStatuses((p) => ({ ...p, [subject]: { status: 'ERROR' } }));
     }
-    setDeploying((p) => ({ ...p, [subject]: false }));
   };
 
-  const deployableSubjects = useMemo(() => {
-    const activeHs = selectedWeek?.active_hs_subject;
-    return PAGE_SUBJECTS.filter((s) => {
-      if (s === 'Homeroom') return true; // always deployable
-      // Inactive H/S still deploys (as a redirect page)
-      if ((s === 'History' || s === 'Science') && activeHs && activeHs !== s) return true;
-      const sRows = filterTogetherPageRows(rows, s);
-      return sRows.length > 0;
-    });
-  }, [rows, selectedWeek]);
-
-  // Deploy all pages with progress toast
   const handleDeployAll = async () => {
     setDeployingAll(true);
+    toast.info('Deploying all subjects...');
 
-    if (deployableSubjects.length === 0) {
-      toast.error('No data to deploy');
-      setDeployingAll(false);
-      return;
-    }
+    for (const subject of PAGE_SUBJECTS) {
+      // Logic from handleDeploy, but without opening the modal
+      let sRows: CanvasPageRow[] = [];
+      let html = '';
+      let courseId: number | undefined;
+      const quarterColor = config.quarterColors[selectedWeek.quarter] || '#0065a7';
+      const pageSlug = getPageSlug(selectedWeek.quarter, selectedWeek.week_num);
+      const pageTitle = getPageTitle(selectedWeek.quarter, selectedWeek.week_num);
 
-    const toastId = toast.loading(`Deploying 0/${deployableSubjects.length} pages\u2026`);
-    let done = 0;
-    let errors = 0;
+      if (subject === 'Homeroom') {
+        courseId = config.courseIds['Homeroom'];
+        const tests = rows
+          .filter((r) => r.type === 'Test' || (r.in_class || '').toLowerCase().includes('test'))
+          .map((r) => `${r.day}: ${r.subject}${r.lesson_num ? ` — ${r.lesson_num}` : ''}`);
+        html = generateHomeroomPageHtml({
+          weekNum: selectedWeek.week_num,
+          quarter: selectedWeek.quarter,
+          dateRange: selectedWeek.date_range || '',
+          quarterColor,
+          reminders: selectedWeek.reminders || '',
+          resources: selectedWeek.resources || '',
+          homeroomNotes: latestNewsletter?.homeroom_notes || '',
+          birthdays: latestNewsletter?.birthdays || '',
+          upcomingTests: tests,
+        });
+      } else {
+        const activeHs = selectedWeek.active_hs_subject;
+        const isInactiveHs =
+          (subject === 'History' || subject === 'Science') && activeHs && activeHs !== subject;
 
-    for (const subject of deployableSubjects) {
-      toast.loading(`Deploying ${subject} (${done + 1}/${deployableSubjects.length})\u2026`, { id: toastId });
-      try {
-        await handleDeploy(subject);
-      } catch {
-        errors++;
+        if (isInactiveHs) {
+          courseId = config.courseIds[subject];
+          html = generateRedirectPageHtml({
+            thisSubject: subject as 'History' | 'Science',
+            activeSubject: activeHs as 'History' | 'Science',
+            weekNum: selectedWeek.week_num,
+            quarter: selectedWeek.quarter,
+            dateRange: selectedWeek.date_range || '',
+            quarterColor,
+          });
+        } else {
+          sRows = filterTogetherPageRows(rows, subject);
+          if (sRows.length > 0) {
+            courseId = resolveTogetherCourseId(subject) ?? config.courseIds[subject];
+            html = generateCanvasPageHtml({
+              subject: subject === 'Reading' ? 'Reading & Spelling' : subject,
+              rows: sRows,
+              quarter: selectedWeek.quarter,
+              weekNum: selectedWeek.week_num,
+              dateRange: selectedWeek.date_range || '',
+              reminders: selectedWeek.reminders || '',
+              resources: selectedWeek.resources || '',
+              quarterColor,
+              contentMap,
+            });
+          }
+        }
       }
-      done++;
-    }
 
-    if (errors > 0) {
-      toast.warning(`Deployed ${done - errors}/${deployableSubjects.length} pages (${errors} failed)`, { id: toastId });
-    } else {
-      toast.success(`All ${deployableSubjects.length} pages deployed! \u2705`, { id: toastId });
+      if (courseId && html) {
+        try {
+          await logDeployHabit({ entity_type: 'page', action: 'deploy', entity_id: subject, details: `Deploy All, HTML length: ${html.length}` });
+          const hash = await sha256Hex(html);
+          const res: DeployResult = await callEdge('canvas-deploy-page', {
+            subject,
+            courseId,
+            pageUrl: pageSlug,
+            pageTitle,
+            bodyHtml: html,
+            published: config.autoLogic.pagePublishDefault,
+            setFrontPage: true,
+            weekId: selectedWeek.id,
+            contentHash: hash,
+          });
+
+          if (res.status === 'SKIPPED') {
+            toast.info(`${subject} page skipped`, { description: 'Content unchanged.' });
+          } else if (res.status === 'DEPLOYED' || res.status === 'REPAIRED') {
+            toast.success(`${subject} page deployed`);
+          } else {
+            throw new Error(res.error || 'Unknown error');
+          }
+        } catch (e) {
+          const message = e instanceof Error ? e.message : 'Unknown error';
+          toast.error(`Failed to deploy ${subject}`, { description: message });
+        }
+      }
     }
     setDeployingAll(false);
   };
@@ -391,211 +460,239 @@ export default function PageBuilderPage() {
     return <Badge variant="outline" className="text-[10px]">{s.status}</Badge>;
   };
 
+  const [previewState, setPreviewState] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    html: string;
+    deployFn: (editedHtml: string) => void;
+  }>({
+    isOpen: false,
+    title: '',
+    description: '',
+    html: '',
+    deployFn: () => {},
+  });
+
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
-      {/* Header bar */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <Select value={selectedWeekId} onValueChange={setSelectedWeekId}>
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="Select a week\u2026" />
-          </SelectTrigger>
-          <SelectContent>
-            {weeks.map((w) => (
-              <SelectItem key={w.id} value={w.id}>
-                {w.quarter} Week {w.week_num}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+    <>
+      <div className="space-y-6 animate-in fade-in duration-300">
+        <div className="flex items-center justify-between">
+          <Select value={selectedWeekId} onValueChange={setSelectedWeekId}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Select a week\u2026" />
+            </SelectTrigger>
+            <SelectContent>
+              {weeks.map((w) => (
+                <SelectItem key={w.id} value={w.id}>
+                  {w.quarter} Week {w.week_num}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-        {selectedWeek && (
-          <span className="text-sm text-muted-foreground">{selectedWeek.date_range}</span>
-        )}
+          {selectedWeek && (
+            <span className="text-sm text-muted-foreground">{selectedWeek.date_range}</span>
+          )}
 
-        <div className="ml-auto">
-          <Button
-            variant="deploy"
-            size="sm"
-            onClick={() => setDiffOpen(true)}
-            disabled={deployingAll || !selectedWeekId || deployableSubjects.length === 0}
-            className="gap-1.5"
-          >
-            {deployingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Rocket className="h-3.5 w-3.5" />}
-            {deployingAll ? 'Deploying\u2026' : 'Deploy All Pages'}
-          </Button>
-        </div>
-      </div>
-
-      <SafetyDiffModal
-        open={diffOpen}
-        onOpenChange={setDiffOpen}
-        month={selectedMonth}
-        week={storeWeek}
-        action="DEPLOY_AGENDAS"
-        itemCount={deployableSubjects.length}
-        items={deployableSubjects.map(s => ({ label: `${s === 'Reading' ? 'Reading & Spelling' : s} Agenda`, subject: s }))}
-        onApprove={handleDeployAll}
-      />
-
-      {!selectedWeekId ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            <Globe className="h-12 w-12 mx-auto mb-4 opacity-30" />
-            <p className="text-sm">Select a saved week to preview and deploy agenda pages.</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          {/* LEFT — Subject tabs + cards */}
-          <div className="space-y-4">
-            <Tabs value={activeSubject} onValueChange={setActiveSubject}>
-              <TabsList>
-                {PAGE_SUBJECTS.map((s) => (
-                  <TabsTrigger key={s} value={s} className="text-xs gap-1.5">
-                    {s === 'Reading' ? 'Reading & Spelling' : s}
-                    {deployStatuses[s]?.status === 'DEPLOYED' && <CheckCircle2 className="h-3 w-3 text-success" />}
-                    {deployStatuses[s]?.status === 'ERROR' && <AlertTriangle className="h-3 w-3 text-destructive" />}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-
-            <Card>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">
-                    {activeSubject === 'Reading' ? 'Reading & Spelling' : activeSubject} Agenda
-                  </CardTitle>
-                  {statusBadge(activeSubject)}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <StyleSuggestions type="page_section_order" subject={activeSubject} />
-                <div className="text-xs text-muted-foreground space-y-1">
-                  <p><strong>Page URL:</strong> {selectedWeek ? getPageSlug(selectedWeek.quarter, selectedWeek.week_num) : '\u2014'}</p>
-                  <p><strong>Course ID:</strong> {config?.courseIds[activeSubject] || '\u2014'}</p>
-                  {deployStatuses[activeSubject]?.canvasUrl && (
-                    <p>
-                      <strong>Canvas URL:</strong>{' '}
-                      <a
-                        href={deployStatuses[activeSubject].canvasUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary underline inline-flex items-center gap-1"
-                      >
-                        Open <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="deploy"
-                    onClick={() => handleDeploy(activeSubject)}
-                    disabled={deploying[activeSubject]}
-                    className="gap-1.5"
-                  >
-                    {deploying[activeSubject] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Rocket className="h-3.5 w-3.5" />}
-                    {deploying[activeSubject] ? 'Deploying\u2026' : 'Deploy Page'}
-                  </Button>
-                </div>
-
-                {/* Row summary */}
-                <div className="border rounded-lg overflow-hidden">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-muted">
-                        <th className="text-left p-2">Day</th>
-                        <th className="text-left p-2">Type</th>
-                        <th className="text-left p-2">Lesson</th>
-                        <th className="text-left p-2">In Class</th>
-                        <th className="text-left p-2">At Home</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {DAYS_ORDER.map((day) => {
-                        const dayRows = subjectRows.filter((r) => r.day === day);
-                        if (dayRows.length === 0) return null;
-                        return dayRows.map((r, i) => (
-                          <tr key={`${day}-${i}`} className="border-t">
-                            <td className="p-2 font-medium">{i === 0 ? day : ''}</td>
-                            <td className="p-2">{r.type || '\u2014'}</td>
-                            <td className="p-2">{r.lesson_num || '\u2014'}</td>
-                            <td className="p-2 max-w-[200px] truncate">{r.in_class || '\u2014'}</td>
-                            <td className="p-2 max-w-[200px] truncate text-muted-foreground">{day === 'Friday' ? 'No Homework' : (r.at_home || '\u2014')}</td>
-                          </tr>
-                        ));
-                      })}
-                      {subjectRows.length === 0 && (
-                        <tr><td colSpan={5} className="p-4 text-center text-muted-foreground">No pacing data for this subject.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
+          <div className="ml-auto">
+            <Button
+              variant="deploy"
+              size="sm"
+              onClick={() => setDiffOpen(true)}
+              disabled={deployingAll || !selectedWeekId || deployableSubjects.length === 0}
+              className="gap-1.5"
+            >
+              {deployingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Rocket className="h-3.5 w-3.5" />}
+              {deployingAll ? 'Deploying\u2026' : 'Deploy All Pages'}
+            </Button>
           </div>
+        </div>
 
-          {/* RIGHT — Preview / HTML Code */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Button
-                variant={previewMode === 'preview' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setPreviewMode('preview')}
-                className="gap-1.5"
-              >
-                <Eye className="h-3.5 w-3.5" />
-                Preview
-              </Button>
-              <Button
-                variant={previewMode === 'code' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setPreviewMode('code')}
-                className="gap-1.5"
-              >
-                <Code className="h-3.5 w-3.5" />
-                HTML Code
-              </Button>
-              {previewMode === 'code' && (
-                <Button variant="outline" size="sm" onClick={copyHtml} className="gap-1.5 ml-auto">
-                  <Copy className="h-3.5 w-3.5" />
-                  Copy
-                </Button>
-              )}
+        <SafetyDiffModal
+          open={diffOpen}
+          onOpenChange={setDiffOpen}
+          month={selectedMonth}
+          week={storeWeek}
+          action="DEPLOY_AGENDAS"
+          itemCount={deployableSubjects.length}
+          items={deployableSubjects.map(s => ({ label: `${s === 'Reading' ? 'Reading & Spelling' : s} Agenda`, subject: s }))}
+          onApprove={handleDeployAll}
+        />
+
+        {!selectedWeekId ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              <Globe className="h-12 w-12 mx-auto mb-4 opacity-30" />
+              <p className="text-sm">Select a saved week to preview and deploy agenda pages.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            {/* LEFT — Subject tabs + cards */}
+            <div className="space-y-4">
+              <Tabs value={activeSubject} onValueChange={setActiveSubject}>
+                <TabsList>
+                  {PAGE_SUBJECTS.map((s) => (
+                    <TabsTrigger key={s} value={s} className="text-xs gap-1.5">
+                      {s === 'Reading' ? 'Reading & Spelling' : s}
+                      {deployStatuses[s]?.status === 'DEPLOYED' && <CheckCircle2 className="h-3 w-3 text-success" />}
+                      {deployStatuses[s]?.status === 'ERROR' && <AlertTriangle className="h-3 w-3 text-destructive" />}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base">
+                      {activeSubject === 'Reading' ? 'Reading & Spelling' : activeSubject} Agenda
+                    </CardTitle>
+                    {statusBadge(activeSubject)}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <StyleSuggestions type="page_section_order" subject={activeSubject} />
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p><strong>Page URL:</strong> {selectedWeek ? getPageSlug(selectedWeek.quarter, selectedWeek.week_num) : '\u2014'}</p>
+                    <p><strong>Course ID:</strong> {config?.courseIds[activeSubject] || '\u2014'}</p>
+                    {deployStatuses[activeSubject]?.canvasUrl && (
+                      <p>
+                        <strong>Canvas URL:</strong>{' '}
+                        <a
+                          href={deployStatuses[activeSubject].canvasUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary underline inline-flex items-center gap-1"
+                        >
+                          Open <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="deploy"
+                      onClick={() => handleDeploy(activeSubject)}
+                      disabled={deploying[activeSubject]}
+                      className="gap-1.5"
+                    >
+                      {deploying[activeSubject] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Rocket className="h-3.5 w-3.5" />}
+                      {deploying[activeSubject] ? 'Deploying\u2026' : 'Deploy Page'}
+                    </Button>
+                  </div>
+
+                  {/* Row summary */}
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-muted">
+                          <th className="text-left p-2">Day</th>
+                          <th className="text-left p-2">Type</th>
+                          <th className="text-left p-2">Lesson</th>
+                          <th className="text-left p-2">In Class</th>
+                          <th className="text-left p-2">At Home</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {DAYS_ORDER.map((day) => {
+                          const dayRows = subjectRows.filter((r) => r.day === day);
+                          if (dayRows.length === 0) return null;
+                          return dayRows.map((r, i) => (
+                            <tr key={`${day}-${i}`} className="border-t">
+                              <td className="p-2 font-medium">{i === 0 ? day : ''}</td>
+                              <td className="p-2">{r.type || '\u2014'}</td>
+                              <td className="p-2">{r.lesson_num || '\u2014'}</td>
+                              <td className="p-2 max-w-[200px] truncate">{r.in_class || '\u2014'}</td>
+                              <td className="p-2 max-w-[200px] truncate text-muted-foreground">{day === 'Friday' ? 'No Homework' : (r.at_home || '\u2014')}</td>
+                            </tr>
+                          ));
+                        })}
+                        {subjectRows.length === 0 && (
+                          <tr><td colSpan={5} className="p-4 text-center text-muted-foreground">No pacing data for this subject.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
 
-            <Card className="min-h-[500px]">
-              <CardContent className="p-4">
-                {!generatedHtml ? (
-                  <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-                    <Globe className="h-10 w-10 mb-3 opacity-20" />
-                    <p className="text-sm">No data for this subject/week.</p>
-                  </div>
-                ) : previewMode === 'preview' ? (
-                  <div>
-                    <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider font-semibold">
-                      Mobile preview \u2014 sandboxed exact HTML being deployed
-                    </p>
-                    <iframe
-                      title="Canvas page preview"
-                      sandbox=""
-                      srcDoc={`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>body{font-family:'Helvetica Neue',Arial,sans-serif;margin:0;padding:16px;background:#fff;color:#222;line-height:1.5}h2,h3,h4{margin:0}h3{padding:10px 16px;border-radius:4px 4px 0 0;font-size:18px}h2{padding:14px;border-radius:4px;font-size:22px}.kl_subtitle{text-align:center;color:#666;font-style:italic;margin:8px 0 16px}.kl_wrapper>div{margin-bottom:18px;border:1px solid #e3e3e3;border-radius:6px;overflow:hidden}.kl_wrapper>div>*:not(h2):not(h3){padding-left:16px;padding-right:16px}p{margin:8px 0}a{color:#0065a7}img{max-width:100%;height:auto}</style></head><body>${generatedHtml}</body></html>`}
-                      style={{ width: '100%', minHeight: '600px', border: '1px solid hsl(var(--border))', borderRadius: '6px', background: '#fff' }}
-                    />
-                  </div>
-                ) : (
-                  <pre className="text-xs bg-muted text-foreground p-4 rounded-lg overflow-auto max-h-[600px] whitespace-pre-wrap font-mono">
-                    {generatedHtml}
-                  </pre>
+            {/* RIGHT — Preview / HTML Code */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={previewMode === 'preview' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setPreviewMode('preview')}
+                  className="gap-1.5"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  Preview
+                </Button>
+                <Button
+                  variant={previewMode === 'code' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setPreviewMode('code')}
+                  className="gap-1.5"
+                >
+                  <Code className="h-3.5 w-3.5" />
+                  HTML Code
+                </Button>
+                {previewMode === 'code' && (
+                  <Button variant="outline" size="sm" onClick={copyHtml} className="gap-1.5 ml-auto">
+                    <Copy className="h-3.5 w-3.5" />
+                    Copy
+                  </Button>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+
+              <Card className="min-h-[500px]">
+                <CardContent className="p-4">
+                  {!generatedHtml ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                      <Globe className="h-10 w-10 mb-3 opacity-20" />
+                      <p className="text-sm">No data for this subject/week.</p>
+                    </div>
+                  ) : previewMode === 'preview' ? (
+                    <div>
+                      <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider font-semibold">
+                        Mobile preview \u2014 sandboxed exact HTML being deployed
+                      </p>
+                      <iframe
+                        title="Canvas page preview"
+                        sandbox=""
+                        srcDoc={`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>body{font-family:'Helvetica Neue',Arial,sans-serif;margin:0;padding:16px;background:#fff;color:#222;line-height:1.5}h2,h3,h4{margin:0}h3{padding:10px 16px;border-radius:4px 4px 0 0;font-size:18px}h2{padding:14px;border-radius:4px;font-size:22px}.kl_subtitle{text-align:center;color:#666;font-style:italic;margin:8px 0 16px}.kl_wrapper>div{margin-bottom:18px;border:1px solid #e3e3e3;border-radius:6px;overflow:hidden}.kl_wrapper>div>*:not(h2):not(h3){padding-left:16px;padding-right:16px}p{margin:8px 0}a{color:#0065a7}img{max-width:100%;height:auto}</style></head><body>${generatedHtml}</body></html>`}
+                        style={{ width: '100%', minHeight: '600px', border: '1px solid hsl(var(--border))', borderRadius: '6px', background: '#fff' }}
+                      />
+                    </div>
+                  ) : (
+                    <pre className="text-xs bg-muted text-foreground p-4 rounded-lg overflow-auto max-h-[600px] whitespace-pre-wrap font-mono">
+                      {generatedHtml}
+                    </pre>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+      <CanvasPreviewModal
+        isOpen={previewState.isOpen}
+        onClose={() => setPreviewState(prev => ({ ...prev, isOpen: false }))}
+        title={previewState.title}
+        description={previewState.description}
+        generatedHtml={previewState.html}
+        isDeploying={deploying[activeSubject] || false}
+        onDeploy={(editedHtml) => {
+          if (typeof editedHtml === 'string') {
+            previewState.deployFn(editedHtml);
+          }
+        }}
+      />
+    </>
   );
 }

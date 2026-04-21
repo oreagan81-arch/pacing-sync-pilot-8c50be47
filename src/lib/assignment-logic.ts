@@ -8,7 +8,8 @@ export function generateAssignmentTitle(
   subject: string,
   type: string,
   lessonNum: string | null,
-  prefix: string
+  prefix: string,
+  lessonTitle?: string | null
 ): string {
   const num = lessonNum || '';
 
@@ -32,6 +33,9 @@ export function generateAssignmentTitle(
     case 'Language Arts':
       if (type === 'Test') return `${prefix} Shurley Test`;
       if (type === 'CP' || type === 'Classroom Practice') return `${prefix} Classroom Practice ${num}`;
+      if (lessonTitle && lessonTitle.toLowerCase().includes('shurley')) {
+        return `${prefix} ${lessonTitle.replace(/^(shurley\s*english\s*)+/i, '')}`;
+      }
       return `${prefix} English ${num}`;
 
     default:
