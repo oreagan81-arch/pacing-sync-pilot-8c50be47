@@ -22,7 +22,9 @@ import SettingsPage from '@/pages/SettingsPage';
 import MemoryPage from '@/pages/MemoryPage';
 import AutomationPage from '@/pages/AutomationPage';
 import CanvasBrainPage from '@/pages/CanvasBrainPage';
+import PacingCalendarPage from '@/pages/PacingCalendarPage';
 import NotFound from '@/pages/NotFound';
+import PacingCalendarPage from '@/pages/PacingCalendarPage';
 
 const queryClient = new QueryClient();
 
@@ -76,7 +78,9 @@ function AppContent({ config }: { config: AppConfig }) {
               />
             }
           />
+          <Route path="/pacing-calendar" element={<PacingCalendarPage />} />
           <Route path="/pacing-viewer" element={<PacingViewerPage />} />
+          <Route path="/pacing-calendar" element={<PacingCalendarPage />} />
           <Route path="/pages" element={<PageBuilderPage />} />
           <Route path="/assignments" element={<AssignmentsPage />} />
           <Route path="/announcements" element={<AnnouncementCenterPage />} />
