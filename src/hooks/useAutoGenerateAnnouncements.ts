@@ -3,6 +3,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { AppConfig } from '@/lib/config';
 import type { WeekOption } from './useWeeksList';
+import {
+  renderCombinedReadingSpellingBody,
+  buildCombinedTitle,
+  renderReadingTestBody,
+  renderSpellingTestBody,
+} from '@/lib/announcement-templates';
 
 export interface PacingRow {
   id: string;
@@ -42,11 +48,54 @@ export function useAutoGenerateAnnouncements() {
       const week = weeks.find((w) => w.id === weekId);
       const weekLabel = week ? `${week.quarter} Wk ${week.week_num}` : '';
 
-      // TODO: Implement announcement template generation logic here
-      // For now, just return 0 to indicate no announcements were generated
-      const generatedCount = 0;
+      const drafts = [];
+
+      // Test Reminders
+      const tests = rows.filter((r) => (r.type ?? '').toLowerCase().includes('test'));
+      for (const test of tests) {
+        const title = `${test.subject} Test Reminder`;
+        let content = `<p>A test for ${test.subject} is scheduled for ${test.day}.</p>`;
+        if (test.subject === 'Reading') {
+          content = renderReadingTestBody({ lessonNum: test.lesson_num, readingTestPhrases: [] });
+        } else if (test.subject === 'Spelling') {
+          content = renderSpellingTestBody({ testNum: parseInt(test.lesson_num || '0'), wordBank: {} });
+        }
+        drafts.push({
+          week_id: weekId,
+          subject: test.subject,
+          title,
+          content,
+          type: 'test_reminder',
+          status: 'DRAFT',
+          course_id: config.courseIds[test.subject],
+        });
+      }
+
+      // Weekly Summaries
+      const subjects = Array.from(new Set(rows.map((r) => r.subject)));
+      for (const subject of subjects) {
+        const title = `${weekLabel} ${subject} Summary`;
+        const content = `<p>This week in ${subject}, we will be covering...</p>`;
+        drafts.push({
+          week_id: weekId,
+          subject,
+          title,
+          content,
+          type: 'weekly_summary',
+          status: 'DRAFT',
+          course_id: config.courseIds[subject],
+        });
+      }
+
+      if (drafts.length > 0) {
+        const { error } = await supabase.from('announcements').insert(drafts);
+        if (error) throw error;
+      }
+      
+      const generatedCount = drafts.length;
 
       if (generatedCount === 0) {
+// ... existing code ...
         toast.info('No announcement triggers matched this week');
       } else {
         toast.success(`Auto-generated ${generatedCount} announcement(s)`);

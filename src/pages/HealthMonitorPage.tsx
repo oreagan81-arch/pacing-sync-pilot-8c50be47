@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Activity, CheckCircle2, AlertTriangle, XCircle, RefreshCw, Clock, Loader2, Wifi } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useHealthMonitor } from '@/hooks/useHealthMonitor';
 
 interface DeployLogEntry {
   id: string;
@@ -26,66 +27,7 @@ interface Stats {
 }
 
 export default function HealthMonitorPage() {
-  const [logs, setLogs] = useState<DeployLogEntry[]>([]);
-  const [stats, setStats] = useState<Stats>({ total: 0, deployed: 0, errors: 0, noChange: 0 });
-  const [filter, setFilter] = useState<string>('all');
-  const [loading, setLoading] = useState(false);
-  const [connected, setConnected] = useState(false);
-
-  const computeStats = (entries: DeployLogEntry[]) => ({
-    total: entries.length,
-    deployed: entries.filter(l => l.status === 'DEPLOYED').length,
-    errors: entries.filter(l => l.status === 'ERROR').length,
-    noChange: entries.filter(l => l.status === 'NO_CHANGE').length,
-  });
-
-  const loadLogs = async () => {
-    setLoading(true);
-    let query = supabase.from('deploy_log').select('*').order('created_at', { ascending: false }).limit(100);
-    if (filter !== 'all') query = query.eq('action', filter);
-    const { data } = await query;
-    if (data) {
-      setLogs(data);
-      setStats(computeStats(data));
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => { loadLogs(); }, [filter]);
-
-  // Realtime subscription with connection status
-  useEffect(() => {
-    let isMounted = true;
-
-    const channel = supabase
-      .channel('deploy-log-realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'deploy_log' }, (payload) => {
-        if (!isMounted) return;
-        const newEntry = payload.new as DeployLogEntry;
-        setLogs(prev => {
-          const updated = [newEntry, ...prev].slice(0, 100);
-          setStats(computeStats(updated));
-          return updated;
-        });
-        
-        const label = [newEntry.action?.replace(/_/g, ' '), newEntry.subject].filter(Boolean).join(' \u2014 ');
-        if (newEntry.status === 'DEPLOYED') {
-          toast.success(label, { description: newEntry.message || undefined });
-        } else if (newEntry.status === 'ERROR') {
-          toast.error(label, { description: newEntry.message || undefined });
-        }
-      })
-      .subscribe((status) => {
-        if (isMounted) {
-          setConnected(status === 'SUBSCRIBED');
-        }
-      });
-
-    return () => {
-      isMounted = false;
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  const { logs, stats, filter, setFilter, loading, connected, loadLogs } = useHealthMonitor();
 
   const statusIcon = (status: string | null) => {
     if (status === 'DEPLOYED') return <CheckCircle2 className="h-4 w-4 text-success" />;

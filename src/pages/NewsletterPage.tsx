@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { sanitizeHtml } from '@/lib/sanitize';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -307,8 +308,6 @@ export default function NewsletterPage() {
               </CardHeader>
               <CardContent>
                 {previewMode === 'preview' ? (
-import { sanitizeHtml } from '@/lib/sanitize';
-// ... existing code ...
                   <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(htmlContent) }} />
                 ) : (
                   <pre className="text-xs bg-slate-950 text-slate-100 p-4 rounded-lg overflow-auto max-h-[400px] whitespace-pre-wrap font-mono">

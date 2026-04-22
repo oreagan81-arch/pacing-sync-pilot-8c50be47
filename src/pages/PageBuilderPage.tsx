@@ -21,6 +21,8 @@ import {
 import { logDeployHabit } from '@/lib/teacher-memory';
 import { StyleSuggestions } from '@/components/canvas-brain/StyleSuggestions';
 import { CanvasPreviewModal } from '@/components/CanvasPreviewModal';
+import { usePageBuilder } from '@/hooks/usePageBuilder';
+import { useDeployments } from '@/hooks/useDeployments';
 
 const PAGE_SUBJECTS = ['Math', 'Reading', 'Language Arts', 'History', 'Science', 'Homeroom'] as const;
 const DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -48,20 +50,22 @@ interface DeployResult {
 }
 
 export default function PageBuilderPage() {
-  const config = useConfig();
-  const [weeks, setWeeks] = useState<WeekOption[]>([]);
-  const [selectedWeekId, setSelectedWeekId] = useState<string>('');
-  const [selectedWeek, setSelectedWeek] = useState<WeekOption | null>(null);
-  const [savedRows, setSavedRows] = useState<CanvasPageRow[]>([]);
-  const [contentMap, setContentMap] = useState<ContentMapEntry[]>([]);
-  const [latestNewsletter, setLatestNewsletter] = useState<{ homeroom_notes: string | null; birthdays: string | null } | null>(null);
+  const {
+    config,
+    weeks,
+    selectedWeekId,
+    setSelectedWeekId,
+    selectedWeek,
+    rows,
+    contentMap,
+    latestNewsletter,
+  } = usePageBuilder();
+  const { deployPage, isDeployingPage } = useDeployments();
+
   const [activeSubject, setActiveSubject] = useState<string>('Math');
   const [previewMode, setPreviewMode] = useState<'preview' | 'code'>('preview');
-  const [deploying, setDeploying] = useState<Record<string, boolean>>({});
   const [deployStatuses, setDeployStatuses] = useState<Record<string, { status: string; canvasUrl?: string }>>({});
-  const [deployingAll, setDeployingAll] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
-  const { selectedMonth, selectedWeek: storeWeek, pacingData, fetchPacingData } = useSystemStore();
 
   // Filter subjects that have rows and are deployable
   const deployableSubjects = useMemo(() => {
@@ -70,7 +74,7 @@ export default function PageBuilderPage() {
       return subjectSpecificRows.length > 0;
     });
   }, [rows]);
-  
+
   const [previewState, setPreviewState] = useState<{
     isOpen: boolean;
     title: string;
@@ -155,35 +159,6 @@ export default function PageBuilderPage() {
       });
   }, [selectedWeekId, weeks, fetchPacingData]);
 
-  const rows: CanvasPageRow[] = useMemo(() => {
-    if (!pacingData) return savedRows;
-
-    const savedRowMap = new Map(savedRows.map((row) => [`${row.subject}:${row.day}`, row]));
-    const result: CanvasPageRow[] = [];
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-
-    for (const [subject, cells] of Object.entries(pacingData.subjects)) {
-      cells.forEach((cell, idx) => {
-        const day = days[idx];
-        const savedRow = savedRowMap.get(`${subject}:${day}`);
-        result.push({
-          day,
-          type: savedRow?.type || (cell.isTest ? 'Test' : cell.isReview ? 'Review' : cell.isNoClass ? '-' : 'Lesson'),
-          lesson_num: cell.lessonNum || savedRow?.lesson_num || null,
-          in_class: cell.value || savedRow?.in_class || null,
-          at_home: savedRow?.at_home || null,
-          canvas_url: savedRow?.canvas_url || null,
-          canvas_assignment_id: savedRow?.canvas_assignment_id || null,
-          object_id: savedRow?.object_id || null,
-          subject,
-          resources: savedRow?.resources || null,
-        });
-      });
-    }
-
-    return result;
-  }, [pacingData, savedRows]);
-
   // Get rows for active subject (Reading tab merges Reading + Spelling via Together Logic)
   const subjectRows = useMemo(() => {
     return filterTogetherPageRows(rows, activeSubject);
@@ -256,194 +231,14 @@ export default function PageBuilderPage() {
   // Deploy single subject page via canvas-deploy-page edge function
   const handleDeploy = async (subject: string) => {
     if (!selectedWeek || !config) return;
-
-    setDeployingAll(false);
-    toast.info('Deploying subject...');
-
-    let sRows: CanvasPageRow[] = [];
-    let html = '';
-    let courseId: number | undefined;
-    const quarterColor = config.quarterColors[selectedWeek.quarter] || '#0065a7';
-    const pageSlug = getPageSlug(selectedWeek.quarter, selectedWeek.week_num);
-    const pageTitle = getPageTitle(selectedWeek.quarter, selectedWeek.week_num);
-
-    if (subject === 'Homeroom') {
-      courseId = config.courseIds['Homeroom'];
-      const tests = rows
-        .filter((r) => r.type === 'Test' || (r.in_class || '').toLowerCase().includes('test'))
-        .map((r) => `${r.day}: ${r.subject}${r.lesson_num ? ` \u2014 ${r.lesson_num}` : ''}`);
-      html = generateHomeroomPageHtml({
-        weekNum: selectedWeek.week_num,
-        quarter: selectedWeek.quarter,
-        dateRange: selectedWeek.date_range || '',
-        quarterColor,
-        reminders: selectedWeek.reminders || '',
-        resources: selectedWeek.resources || '',
-        homeroomNotes: latestNewsletter?.homeroom_notes || '',
-        birthdays: latestNewsletter?.birthdays || '',
-        upcomingTests: tests,
-      });
-    } else {
-      const activeHs = selectedWeek.active_hs_subject;
-      const isInactiveHs =
-        (subject === 'History' || subject === 'Science') && activeHs && activeHs !== subject;
-
-      if (isInactiveHs) {
-        // Deploy redirect page instead of full agenda
-        courseId = config.courseIds[subject];
-        html = generateRedirectPageHtml({
-          thisSubject: subject as 'History' | 'Science',
-          activeSubject: activeHs as 'History' | 'Science',
-          weekNum: selectedWeek.week_num,
-          quarter: selectedWeek.quarter,
-          dateRange: selectedWeek.date_range || '',
-          quarterColor,
-        });
-      } else {
-        sRows = filterTogetherPageRows(rows, subject);
-
-        if (sRows.length > 0) {
-          courseId = resolveTogetherCourseId(subject) ?? config.courseIds[subject];
-          html = generateCanvasPageHtml({
-            subject: subject === 'Reading' ? 'Reading & Spelling' : subject,
-            rows: sRows,
-            quarter: selectedWeek.quarter,
-            weekNum: selectedWeek.week_num,
-            dateRange: selectedWeek.date_range || '',
-            reminders: selectedWeek.reminders || '',
-            resources: selectedWeek.resources || '',
-            quarterColor,
-            contentMap,
-          });
-        }
-      }
-    }
-
-    if (courseId && html) {
-      try {
-        await logDeployHabit('page', subject, html);
-        const hash = await sha256Hex(html);
-        const res: DeployResult = await callEdge('canvas-deploy-page', {
-          subject,
-          courseId,
-          pageUrl: pageSlug,
-          pageTitle,
-          bodyHtml: html,
-          published: config.autoLogic.pagePublishDefault,
-          setFrontPage: true,
-          weekId: selectedWeek.id,
-          contentHash: hash,
-        });
-
-        if (res.status === 'SKIPPED') {
-          toast.info(`${subject} page skipped`, { description: 'Content has not changed.' });
-        } else if (res.status === 'DEPLOYED' || res.status === 'REPAIRED') {
-          toast.success(`${subject} page deployed`);
-        } else {
-          throw new Error(res.error || 'Unknown error');
-        }
-      } catch (e: any) {
-        toast.error(`Failed to deploy ${subject}`, { description: e.message });
-      } finally {
-        setDeploying({ ...deploying, [subject]: false });
-        setPreviewState(prev => ({ ...prev, isOpen: false }));
-      }
-    }
+    await deployPage({ subject, selectedWeek, rows, config, latestNewsletter, contentMap });
   };
 
   const handleDeployAll = async () => {
-    setDeployingAll(true);
-    toast.info('Deploying all subjects...');
-
+    if (!selectedWeek || !config) return;
     for (const subject of PAGE_SUBJECTS) {
-      // Logic from handleDeploy, but without opening the modal
-      let sRows: CanvasPageRow[] = [];
-      let html = '';
-      let courseId: number | undefined;
-      const quarterColor = config.quarterColors[selectedWeek.quarter] || '#0065a7';
-      const pageSlug = getPageSlug(selectedWeek.quarter, selectedWeek.week_num);
-      const pageTitle = getPageTitle(selectedWeek.quarter, selectedWeek.week_num);
-
-      if (subject === 'Homeroom') {
-        courseId = config.courseIds['Homeroom'];
-        const tests = rows
-          .filter((r) => r.type === 'Test' || (r.in_class || '').toLowerCase().includes('test'))
-          .map((r) => `${r.day}: ${r.subject}${r.lesson_num ? ` — ${r.lesson_num}` : ''}`);
-        html = generateHomeroomPageHtml({
-          weekNum: selectedWeek.week_num,
-          quarter: selectedWeek.quarter,
-          dateRange: selectedWeek.date_range || '',
-          quarterColor,
-          reminders: selectedWeek.reminders || '',
-          resources: selectedWeek.resources || '',
-          homeroomNotes: latestNewsletter?.homeroom_notes || '',
-          birthdays: latestNewsletter?.birthdays || '',
-          upcomingTests: tests,
-        });
-      } else {
-        const activeHs = selectedWeek.active_hs_subject;
-        const isInactiveHs =
-          (subject === 'History' || subject === 'Science') && activeHs && activeHs !== subject;
-
-        if (isInactiveHs) {
-          courseId = config.courseIds[subject];
-          html = generateRedirectPageHtml({
-            thisSubject: subject as 'History' | 'Science',
-            activeSubject: activeHs as 'History' | 'Science',
-            weekNum: selectedWeek.week_num,
-            quarter: selectedWeek.quarter,
-            dateRange: selectedWeek.date_range || '',
-            quarterColor,
-          });
-        } else {
-          sRows = filterTogetherPageRows(rows, subject);
-          if (sRows.length > 0) {
-            courseId = resolveTogetherCourseId(subject) ?? config.courseIds[subject];
-            html = generateCanvasPageHtml({
-              subject: subject === 'Reading' ? 'Reading & Spelling' : subject,
-              rows: sRows,
-              quarter: selectedWeek.quarter,
-              weekNum: selectedWeek.week_num,
-              dateRange: selectedWeek.date_range || '',
-              reminders: selectedWeek.reminders || '',
-              resources: selectedWeek.resources || '',
-              quarterColor,
-              contentMap,
-            });
-          }
-        }
-      }
-
-      if (courseId && html) {
-        try {
-          await logDeployHabit({ entity_type: 'page', action: 'deploy', entity_id: subject, details: `Deploy All, HTML length: ${html.length}` });
-          const hash = await sha256Hex(html);
-          const res: DeployResult = await callEdge('canvas-deploy-page', {
-            subject,
-            courseId,
-            pageUrl: pageSlug,
-            pageTitle,
-            bodyHtml: html,
-            published: config.autoLogic.pagePublishDefault,
-            setFrontPage: true,
-            weekId: selectedWeek.id,
-            contentHash: hash,
-          });
-
-          if (res.status === 'SKIPPED') {
-            toast.info(`${subject} page skipped`, { description: 'Content unchanged.' });
-          } else if (res.status === 'DEPLOYED' || res.status === 'REPAIRED') {
-            toast.success(`${subject} page deployed`);
-          } else {
-            throw new Error(res.error || 'Unknown error');
-          }
-        } catch (e) {
-          const message = e instanceof Error ? e.message : 'Unknown error';
-          toast.error(`Failed to deploy ${subject}`, { description: message });
-        }
-      }
+      await deployPage({ subject, selectedWeek, rows, config, latestNewsletter, contentMap });
     }
-    setDeployingAll(false);
   };
 
   const copyHtml = () => {

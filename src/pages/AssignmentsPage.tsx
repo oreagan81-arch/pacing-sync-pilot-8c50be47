@@ -33,7 +33,7 @@ import {
 import type { ContentMapEntry } from '@/lib/auto-link';
 import { logDeployHabit } from '@/lib/teacher-memory';
 import { validateDeployment, type ValidationResult } from '@/lib/pre-deploy-validator';
-import { useDeployAssignments } from '@/hooks/useDeployAssignments';
+import { useDeployments } from '@/hooks/useDeployments';
 
 const SUBJECTS = ['Math', 'Reading', 'Spelling', 'Language Arts', 'History', 'Science'];
 const FILTER_CHIPS = ['All', 'Math', 'Reading', 'Language Arts', 'Spelling'];
@@ -60,7 +60,6 @@ interface PacingDbRow {
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
-// ... existing code ...
 export default function AssignmentsPage() {
   const config = useConfig();
   const {
@@ -76,7 +75,7 @@ export default function AssignmentsPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<string>('All');
   const [deployResults, setDeployResults] = useState<Record<string, DeployStatus>>({});
-  const deployAssignments = useDeployAssignments();
+  const { deployAssignments, isDeployingAssignments } = useDeployments();
 
   useRealtimeDeploy();
 
@@ -95,7 +94,6 @@ export default function AssignmentsPage() {
   }, [selectedMonth, selectedWeek, fetchPacingData]);
 
   // History/Science redirect detection
-// ... existing code ...
   const historyRedirect = useMemo(() => {
     if (!pacingData) return null;
     const h = pacingData.subjects['History'];
@@ -212,7 +210,7 @@ export default function AssignmentsPage() {
 
   const handleDeploy = async () => {
     const targets = previewRows.filter((r) => selected.has(r.rowKey));
-    await deployAssignments.mutateAsync(targets);
+    await deployAssignments(targets);
     setSelected(new Set());
     setDiffOpen(false);
   };
@@ -428,8 +426,6 @@ export default function AssignmentsPage() {
                                 </div>
                                 <div
                                   className="text-sm prose prose-sm max-w-none [&_a]:text-primary [&_a]:underline"
-import { sanitizeHtml } from '@/lib/sanitize';
-// ... existing code ...
                                   dangerouslySetInnerHTML={{ __html: sanitizeHtml(row.description) }}
                                 />
                                 <div className="mt-3 text-[10px] font-mono text-muted-foreground">

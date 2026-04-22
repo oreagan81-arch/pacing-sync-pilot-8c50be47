@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { CalendarClock, Megaphone } from 'lucide-react';
 import { useUpcomingAnnouncements } from '@/hooks/useAnnouncements';
-import { subjectColor } from '@/types/thales';
+import { subjectColor } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 
 function formatWhen(iso: string | null): string {

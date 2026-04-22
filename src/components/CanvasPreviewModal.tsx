@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { sanitizeHtml } from '@/lib/sanitize';
 import {
   Dialog,
   DialogContent,
@@ -70,8 +71,6 @@ export function CanvasPreviewModal({
               {isHtmlContent ? (
                 <div
                   className="prose dark:prose-invert max-w-none"
-import { sanitizeHtml } from '@/lib/sanitize';
-// ... existing code ...
                   dangerouslySetInnerHTML={{ __html: sanitizeHtml(editedContent) }}
                 />
               ) : (

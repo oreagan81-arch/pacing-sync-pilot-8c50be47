@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button';
 import { Megaphone, Plus, BookOpen, Loader2, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfig } from '@/lib/config';
-import { useRealtimeDeploy } from '@/hooks/use-realtime-deploy';
 import { useWeeksList } from '@/hooks/useWeeksList';
 import { useAutoGenerateAnnouncements } from '@/hooks/useAutoGenerateAnnouncements';
 import { useAnnouncementsList } from '@/hooks/useAnnouncements';
@@ -11,6 +10,7 @@ import AnnouncementTable from '@/components/announcements/AnnouncementTable';
 import AnnouncementForm from '@/components/announcements/AnnouncementForm';
 import AnnouncementRM from '@/components/announcements/AnnouncementRM';
 import type { AnnouncementDraft } from '@/types/thales';
+import { useDeployments } from '@/hooks/useDeployments';
 
 export default function AnnouncementCenterPage() {
   const config = useConfig();
@@ -29,6 +29,7 @@ export default function AnnouncementCenterPage() {
   const [formContent, setFormContent] = useState('');
   const [formType, setFormType] = useState('test_reminder');
   const [posting, setPosting] = useState<Record<string, boolean>>({});
+  const { deployAnnouncement, isDeployingAnnouncement } = useDeployments();
 
   // Realtime updates
   const handleRealtimeEvent = useCallback(() => {
@@ -52,21 +53,9 @@ export default function AnnouncementCenterPage() {
     // Delegated to AnnouncementTable or using mutation hook
   }, []);
 
-  const handlePost = useCallback(async (ann: AnnouncementDraft) => {
-    if (!ann.course_id || !ann.title) {
-      toast.error('Missing course ID or title');
-      return;
-    }
-    setPosting((p) => ({ ...p, [ann.id]: true }));
-    try {
-      // TODO: Implement canvas post via edge function
-      toast.success('Announcement posted!');
-    } catch (e: any) {
-      toast.error('Post failed', { description: e.message });
-    } finally {
-      setPosting((p) => ({ ...p, [ann.id]: false }));
-    }
-  }, []);
+  const handlePost = async (ann: AnnouncementDraft) => {
+    await deployAnnouncement(ann);
+  };
 
   return (
     <div className="container mx-auto p-4 space-y-6">
