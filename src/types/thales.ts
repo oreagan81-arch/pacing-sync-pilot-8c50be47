@@ -69,24 +69,6 @@ export type AssignmentType =
   | 'Fact Test'
   | 'Review';
 
-export interface PacingRow {
-  id: string;
-  week_id: string | null;
-  subject: Subject | string;
-  day: Day | string;
-  type: string | null;
-  lesson_num: string | null;
-  in_class: string | null;
-  at_home: string | null;
-  resources: string | null;
-  create_assign: boolean | null;
-  is_synthetic: boolean;
-  parent_row_id: string | null;
-  deploy_status: string | null;
-  canvas_url: string | null;
-  canvas_assignment_id: string | null;
-}
-
 export interface AnnouncementDraft {
   id: string;
   title: string | null;
@@ -100,30 +82,51 @@ export interface AnnouncementDraft {
   week_id: string | null;
 }
 
-export interface MemoryHit {
-  source: 'memory' | 'template' | 'ai';
-  count: number;
+export interface Week {
+  id: string;
+  quarter: string;
+  week_num: number;
+  date_range: string | null;
+  reminders: string | null;
+  resources: string | null;
+  active_hs_subject: string | null;
 }
 
-/**
- * Tailwind text + border + bg classes for subject color-coding.
- * Math=orange, Reading=blue, ELA=green, Science=purple, History=navy, Homeroom=gray.
- * Spelling shares Reading's blue (Together Logic).
- */
-export function subjectColor(subject: string | null | undefined): {
-  text: string;
-  bg: string;
-  border: string;
-  chip: string;
-} {
-  const map: Record<string, { text: string; bg: string; border: string; chip: string }> = {
-    Math:            { text: 'text-orange-300',  bg: 'bg-orange-500/10',  border: 'border-orange-500/40',  chip: 'bg-orange-500/15 text-orange-300 border-orange-500/40' },
-    Reading:         { text: 'text-blue-300',    bg: 'bg-blue-500/10',    border: 'border-blue-500/40',    chip: 'bg-blue-500/15 text-blue-300 border-blue-500/40' },
-    Spelling:        { text: 'text-blue-300',    bg: 'bg-blue-500/10',    border: 'border-blue-500/40',    chip: 'bg-blue-500/15 text-blue-300 border-blue-500/40' },
-    'Language Arts': { text: 'text-emerald-300', bg: 'bg-emerald-500/10', border: 'border-emerald-500/40', chip: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40' },
-    Science:         { text: 'text-purple-300',  bg: 'bg-purple-500/10',  border: 'border-purple-500/40',  chip: 'bg-purple-500/15 text-purple-300 border-purple-500/40' },
-    History:         { text: 'text-indigo-300',  bg: 'bg-indigo-500/10',  border: 'border-indigo-500/40',  chip: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/40' },
-    Homeroom:        { text: 'text-slate-300',   bg: 'bg-slate-500/10',   border: 'border-slate-500/40',   chip: 'bg-slate-500/15 text-slate-300 border-slate-500/40' },
-  };
-  return map[subject || ''] || { text: 'text-muted-foreground', bg: 'bg-muted/30', border: 'border-border', chip: 'bg-muted text-muted-foreground border-border' };
+export interface PacingRow {
+  subject: string;
+  day: string;
+  type: string | null;
+  lesson_num: string | null;
+  in_class: string | null;
+  at_home: string | null;
+  resources: string | null;
+  create_assign: boolean;
+}
+
+export interface DayData {
+  type: string;
+  lesson_num: string;
+  in_class: string;
+  at_home: string;
+  resources: string;
+  create_assign: boolean;
+}
+
+export type WeekData = Record<string, Record<string, DayData>>;
+
+const SUBJECTS = ['Math', 'Reading', 'Spelling', 'Language Arts', 'History', 'Science'] as const;
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as const;
+
+function emptyDay(): DayData {
+  return { type: '', lesson_num: '', in_class: '', at_home: '', resources: '', create_assign: true };
+}
+
+export function initWeekData(): WeekData {
+  return SUBJECTS.reduce((acc, subj) => {
+    acc[subj] = DAYS.reduce((dayAcc, day) => {
+      dayAcc[day] = emptyDay();
+      return dayAcc;
+    }, {} as Record<string, DayData>);
+    return acc;
+  }, {} as WeekData);
 }

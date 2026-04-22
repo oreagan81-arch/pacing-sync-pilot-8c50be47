@@ -60,6 +60,7 @@ interface PacingDbRow {
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
+// ... existing code ...
 export default function AssignmentsPage() {
   const config = useConfig();
   const {
@@ -70,8 +71,6 @@ export default function AssignmentsPage() {
   const [deploying, setDeploying] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
   const [contentMap, setContentMap] = useState<ContentMapEntry[]>([]);
-  const [pacingDbRows, setPacingDbRows] = useState<PacingDbRow[]>([]);
-  const [weekId, setWeekId] = useState<string | null>(null);
   const [previewRows, setPreviewRows] = useState<PreviewRow[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -89,25 +88,6 @@ export default function AssignmentsPage() {
       .then(({ data }) => { if (data) setContentMap(data as ContentMapEntry[]); });
   }, []);
 
-  // Fetch pacing rows from DB (for hash comparison + canvas IDs)
-  useEffect(() => {
-    (async () => {
-      const { data: week } = await supabase
-        .from('weeks')
-        .select('id')
-        .eq('quarter', selectedMonth)
-        .eq('week_num', selectedWeek)
-        .maybeSingle();
-      if (!week) { setWeekId(null); setPacingDbRows([]); return; }
-      setWeekId(week.id);
-      const { data: rows } = await supabase
-        .from('pacing_rows')
-        .select('id, subject, day, type, lesson_num, content_hash, canvas_assignment_id, canvas_url')
-        .eq('week_id', week.id);
-      setPacingDbRows((rows as PacingDbRow[]) || []);
-    })();
-  }, [selectedMonth, selectedWeek]);
-
   useEffect(() => {
     fetchPacingData(selectedMonth, selectedWeek);
     setDeployResults({});
@@ -115,6 +95,7 @@ export default function AssignmentsPage() {
   }, [selectedMonth, selectedWeek, fetchPacingData]);
 
   // History/Science redirect detection
+// ... existing code ...
   const historyRedirect = useMemo(() => {
     if (!pacingData) return null;
     const h = pacingData.subjects['History'];
@@ -233,6 +214,7 @@ export default function AssignmentsPage() {
     const targets = previewRows.filter((r) => selected.has(r.rowKey));
     await deployAssignments.mutateAsync(targets);
     setSelected(new Set());
+    setDiffOpen(false);
   };
 
   const statusBadge = (s: DeployStatus) => {
@@ -307,11 +289,11 @@ export default function AssignmentsPage() {
             </Button>
             <Button
               onClick={() => setDiffOpen(true)}
-              disabled={deploying || selected.size === 0 || isLoading}
+              disabled={deployAssignments.isPending || selected.size === 0 || isLoading}
               className="gap-1.5 bg-success hover:bg-success/90 text-success-foreground"
               size="sm"
             >
-              {deploying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Rocket className="h-3.5 w-3.5" />}
+              {deployAssignments.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Rocket className="h-3.5 w-3.5" />}
               Deploy Selected ({selected.size})
             </Button>
           </div>
@@ -384,9 +366,9 @@ export default function AssignmentsPage() {
                           >
                             <TableCell>
                               <Checkbox
-                                checked={selected.has(row.rowKey)}
+                                checked={selected.has(row.rowKey) || liveStatus === 'DEPLOYED'}
                                 onCheckedChange={() => toggleSelect(row.rowKey)}
-                                disabled={!canSelect}
+                                disabled={!canSelect || liveStatus === 'DEPLOYED'}
                               />
                             </TableCell>
                             <TableCell>
