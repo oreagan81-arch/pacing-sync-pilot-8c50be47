@@ -82,13 +82,13 @@ export function formatDueET(date: string | null): string {
 /**
  * Build an assignment from a pacing cell.
  */
-export function buildAssignment(
+export async function buildAssignment(
   pacingCell: PacingCell,
   dayIndex: number,
   config: AppConfig,
   contentMap: ContentMapEntry[],
   options?: { dayOffset?: number; isGas?: boolean },
-): BuiltAssignment {
+): Promise<BuiltAssignment> {
   const { subject, type, lessonNum } = pacingCell;
   const day = DAYS[dayIndex + (options?.dayOffset ?? 0)] || '';
   const isSynthetic = !!options?.isGas;
@@ -123,8 +123,14 @@ export function buildAssignment(
   }
   if (pacingCell.isNoClass) skipReason = 'No class';
 
-  const description = 'TODO: buildDescription';
-  const contentHash = 'TODO: hashAssignment';
+  const description = buildDescription(subject, type, lessonNum, contentMap, config);
+  const contentHash = await hashAssignment({
+    title,
+    description,
+    points: groupInfo.points,
+    group: groupInfo.groupName,
+    dueDate,
+  });
 
   return {
     ...base,
@@ -142,6 +148,20 @@ export function buildAssignment(
 }
 
 /**
+ * Build the HTML description for an assignment.
+ */
+function buildDescription(
+  subject: string,
+  type: string,
+  lessonNum: string,
+  contentMap: ContentMapEntry[],
+  config: AppConfig,
+): string {
+  // TODO: Implement Memory > Templates > AI logic
+  return `<p>This is a placeholder description for ${subject} ${type} ${lessonNum}.</p>`;
+}
+
+/**
  * Alias for buildAssignment for backwards compatibility
  */
 export const buildAssignmentForCell = buildAssignment;
@@ -154,7 +174,22 @@ export function expandMathRow(
   cell: PacingCell,
   options: { config: AppConfig; contentMap: ContentMapEntry[]; weekDates?: string[] },
 ): BuiltAssignment[] {
-  // TODO: Implement Math triple logic (Written + Fact + Study Guide - 1 day)
-  const assignment = buildAssignment(cell, dayIndex, options.config, options.contentMap);
-  return [assignment];
+  const { config, contentMap } = options;
+  const assignments: BuiltAssignment[] = [];
+
+  // 1. Main Written Test
+  const mainTestCell: PacingCell = { ...cell, type: 'Test' };
+  assignments.push(buildAssignment(mainTestCell, dayIndex, config, contentMap));
+
+  // 2. Fact Test (same day)
+  const factTestCell: PacingCell = { ...cell, type: 'Fact Test' };
+  assignments.push(buildAssignment(factTestCell, dayIndex, config, contentMap, { isGas: true }));
+
+  // 3. Study Guide (day before)
+  if (dayIndex > 0) {
+    const studyGuideCell: PacingCell = { ...cell, type: 'Study Guide' };
+    assignments.push(buildAssignment(studyGuideCell, dayIndex - 1, config, contentMap, { isGas: true, dayOffset: -1 }));
+  }
+
+  return assignments;
 }
