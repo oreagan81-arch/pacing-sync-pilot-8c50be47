@@ -12,7 +12,7 @@ import {
   useSyncNow,
 } from '@/hooks/useCanvasBrain';
 import { CONNECTED_COURSES, subjectForCourseId } from '@/lib/canvas-brain';
-import { subjectColor } from '@/types/thales';
+import { subjectColor } from '@/lib/constants';
 import { formatDistanceToNow } from 'date-fns';
 
 export default function CanvasBrainPage() {
